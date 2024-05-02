@@ -1,0 +1,6 @@
+openai
+Pillow  
+langchain  
+PyMuPDF 
+tiktoken
+faiss-cpu
