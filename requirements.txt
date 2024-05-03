@@ -4,3 +4,5 @@ langchain
 PyMuPDF 
 tiktoken
 faiss-cpu
+pandas
+firebase-admin
