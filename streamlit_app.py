@@ -9,6 +9,10 @@ from langchain.vectorstores import FAISS
 from langchain.chains import RetrievalQA
 from langchain.document_loaders import PyMuPDFLoader
 import tempfile
+import firebase_admin
+from firebase_admin import credentials
+from firebase_admin import db
+import pandas as pd
 
 # Initialize the OpenAI client with your API keys
 client = OA(api_key=st.secrets['apiKey'])  # Replace with your actual API key
@@ -88,9 +92,138 @@ def generate_report(client, conversation):
     )
     return response.choices[0].text 
 
+def init_firebase():
+    if not firebase_admin._apps:
+        cred = credentials.Certificate("nuggt-nus-firebase-adminsdk-57mm7-b03004fe53.json")
+        firebase_admin.initialize_app(cred, {
+            'databaseURL': 'https://nuggt-nus-default-rtdb.firebaseio.com'
+        })
+
+def fetch_data_from_firebase():
+    init_firebase()
+    ref = db.reference('/uploaded_data')  # Adjust this path to your data in Firebase
+    data = ref.get()
+    if data is None:
+        return pd.DataFrame()  # Return an empty DataFrame if no data
+    else:
+        # Create a DataFrame from a list of dictionaries
+        students = [value[0] for key, value in data.items()]
+        print(list(data.values())[0])
+        return pd.DataFrame(list(data.values())[0])
+
+def check_credentials(username, password):
+    correct_username = "gary_chan_nus"
+    #correct_password = st.secrets["admin"]
+    correct_password = "!ev3CN8z@Pp"
+    if username == correct_username and password == correct_password:
+        return True
+    return False
+
+def login_form():
+    with st.form("login_form"):
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        submit_button = st.form_submit_button("Login")
+        
+        if submit_button:
+            if check_credentials(username, password):
+                st.session_state['logged_in'] = True  # Update session state
+                st.experimental_rerun()  # Rerun the app to update the view
+            else:
+                st.error("Error: Enter correct username/password")
+
+def active_accounts_view():
+    st.subheader("Active Accounts")
+    
+    # Fetch data from Firebase
+    df = fetch_data_from_firebase()
+    if len(df) > 0:
+        df = df[['Student Name', 'Email']]
+
+    # Display number of accounts and progress
+    total_accounts = len(df)
+    st.write(f"Number of Active Accounts: {total_accounts} out of 60")
+    
+    # Progress bar
+    progress = total_accounts / 60.0
+    st.progress(progress)
+
+    # Display DataFrame
+    #if not df.empty:
+    #    st.dataframe(df, width=800, height=300)  # DataFrame should now be correctly formatted
+
+def save_data_to_firebase(data):
+    ref = db.reference('/uploaded_data')
+    # Convert DataFrame to dictionary
+    data_dict = data.to_dict(orient='records')
+    # Save to Firebase
+    ref.push(data_dict)
+    
+def main_view():
+    st.title("Welcome Gary!")
+
+    # Displaying user information
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("Personal Information")
+        st.write("Name: Gary Chan")
+        st.write("Email: gary.chan@nus.edu.sg")
+        st.write("Organisation: National University of Singapore")
+        active_accounts_view()
+        
+    with col2:
+        st.subheader("Account Details")
+        #st.image("demo.png", width=300)
+        st.write("Type: Large classroom")
+        st.write("Expiry: 5th June 2024")
+        st.write("Student Accounts: 60")
+        st.subheader("Accessible Tools")
+        st.info('Due Diligence 📊')
+        
+    
+    st.subheader("Send Student Invitations")
+    st.success("Please upload a CSV file containing only two columns, titled 'Student Name' and 'Email'. Once you upload the email list, you will be able to send invitations to students at their email addresses. The invitation will include a link to the app and a PDF with instructions on how to use it.")
+   
+    # File upload section
+    uploaded_file = st.file_uploader("Upload a CSV file with student names and emails", type="csv")
+    
+    if uploaded_file is not None:
+        try:
+            # Read the CSV file into a DataFrame
+            data = pd.read_csv(uploaded_file)
+            
+            # Check if required columns are present
+            required_columns = ['Student Name','Email']
+            if all(column in data.columns for column in required_columns):
+                col1, col2 = st.columns([0.8, 0.2])
+
+                with col1:
+                    st.info("CSV file is valid and contains the required columns. Ready to send invitations!")
+                
+                # Display the DataFrame on the screen
+                #st.dataframe(data[required_columns], width=800, height=300)
+                
+                with col2:
+                    # Button to send invitations
+                    if st.button('Send Invitation'):
+                        st.session_state['button_pressed'] = True
+                
+                if 'button_pressed' in st.session_state and st.session_state['button_pressed']:
+                    save_data_to_firebase(data[required_columns])
+                    # Generate and send email to each student
+                    st.success("The email list has been successfully uploaded. For security reasons, invitation emails will be sent to all students within the next 24 hours. Upon completion, the number of active students will be updated on your profile. You will receive a notification via email once all invitations have been sent.")
+                    #active_accounts_view()
+            else:
+                st.error("The uploaded CSV file does not contain the required columns 'Student Name' and 'Email'.")
+        
+        except Exception as e:
+            st.error(f"An error occurred while reading the file: {e}")
+    
+    
 
 # Sidebar navigation
-app_mode = st.sidebar.selectbox('Choose the app mode', ['Dashboard', 'Multimodal', 'Knowledge RAG', 'Due Diligence'])
+app_mode = st.sidebar.selectbox('Choose the app mode', ['Dashboard', 'Due Diligence', 'Admin'])
 
 import streamlit as st
 
@@ -109,85 +242,6 @@ if app_mode == "Dashboard":
     with col2:
         st.header("Accessible Tools")
         st.info('Due Diligence 📊')
-        st.info('Knowledge Graph RAG 🔍')
-        st.info('Multimodal Playground 🎮')
-    
-
-elif app_mode == "Multimodal Playground":
-    # Main app layout
-    st.title("GPT4 Vision")
-
-    # Inject custom CSS with st.markdown to make a custom container sticky
-    st.markdown("""
-        <style>
-        .sticky-container {
-            position: -webkit-sticky; /* For Safari */
-            position: sticky;
-            top: 0;
-            z-index: 1000;
-            background-color: white;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-
-    # Create a sticky container for the file uploader
-    with st.container():
-        st.markdown('<div class="sticky-container">', unsafe_allow_html=True)
-        user_input = st.file_uploader("Upload an image", type=['jpg', 'jpeg', 'png'])
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    # Initialize session state for messages if not already set
-    if 'messages' not in st.session_state:
-        st.session_state['messages'] = []
-
-    # Chat interface
-    for message in st.session_state['messages']:
-        if 'is_photo' in message and message['is_photo']:
-            pass
-            #with st.chat_message(message['role']):
-            #    st.image(message['content'])  # Adjust width as needed
-        else:
-            with st.chat_message(message['role']):
-                st.write(message['content'])
-
-    # Check if a file is uploaded
-    if user_input is not None:
-        # Convert the uploaded file to a PIL Image
-        pil_image = Image.open(user_input)
-        # Add photo to messages as an item
-        st.session_state['messages'].append({'role': 'user', 'content': pil_image, 'is_photo': True})
-        
-    # Text input for questions
-    text_input = st.chat_input("Type your message...", key="chat_input")
-    if text_input:
-        # Add user message to chat
-        st.session_state['messages'].append({'role': 'user', 'content': text_input})
-        with st.chat_message(st.session_state['messages'][-1]['role']):
-            st.markdown(st.session_state['messages'][-1]['content'])  # Adjust width as needed
-        # Trigger bot response
-        get_bot_response()
-
-elif app_mode == "Knowledge Graph Retrieval":
-    st.title('PDF QnA')
-
-    # File upload
-    uploaded_file = st.file_uploader('Upload an article', type='pdf')
-    # Query text
-    query_text = st.text_input('Enter your question:', placeholder = 'Please provide a short summary.', disabled=not uploaded_file)
-
-    # Form input and query
-    result = []
-    with st.form('myform', clear_on_submit=True):
-        openai_api_key = st.secrets['apiKey']
-        submitted = st.form_submit_button('Submit', disabled=not(uploaded_file and query_text))
-        if submitted and openai_api_key.startswith('sk-'):
-            with st.spinner('Calculating...'):
-                response = generate_response(uploaded_file, openai_api_key, query_text)
-                result.append(response)
-                del openai_api_key
-
-    if len(result):
-        st.info(response)
 
 elif app_mode == "Due Diligence":
 
@@ -252,3 +306,15 @@ elif app_mode == "Due Diligence":
             )
             response = st.write_stream(stream)
         st.session_state.dmessages.append({"role": "assistant", "content": response})
+
+elif app_mode == "Admin":
+    init_firebase()
+    if 'logged_in' not in st.session_state:
+        st.session_state['logged_in'] = False  # Initialize session state
+    
+    if st.session_state['logged_in']:
+        main_view()  # Display the main view if logged in
+    else:
+        st.title("Nuggt Admin Login")
+        login_form()  # Display the login form if not logged in
+    
