@@ -1,6 +1,6 @@
 openai
 Pillow  
-langchain  
+langchain==0.1.20  
 PyMuPDF 
 tiktoken
 faiss-cpu
