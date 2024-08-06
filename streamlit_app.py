@@ -112,7 +112,7 @@ def fetch_data_from_firebase():
         return pd.DataFrame(list(data.values())[0])
 
 def check_credentials(username, password):
-    correct_username = "gary_chan_nus"
+    correct_username = "emba_nus"
     #correct_password = st.secrets["admin"]
     correct_password = "!ev3CN8z@Pp"
     if username == correct_username and password == correct_password:
@@ -160,15 +160,15 @@ def save_data_to_firebase(data):
     ref.push(data_dict)
     
 def main_view():
-    st.title("Welcome Gary!")
+    st.title("Welcome EMBA!")
 
     # Displaying user information
     col1, col2 = st.columns(2)
 
     with col1:
         st.subheader("Personal Information")
-        st.write("Name: Gary Chan")
-        st.write("Email: gary.chan@nus.edu.sg")
+        st.write("Name: EMBA")
+        st.write("Email: emba_prog@nus.edu.sg")
         st.write("Organisation: National University of Singapore")
         active_accounts_view()
         
