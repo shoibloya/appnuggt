@@ -176,7 +176,7 @@ def main_view():
         st.subheader("Account Details")
         #st.image("demo.png", width=300)
         st.write("Type: Large classroom")
-        st.write("Expiry: 5th June 2024")
+        st.write("Expiry: 6th September 2024")
         st.write("Student Accounts: 60")
         st.subheader("Accessible Tools")
         st.info('Due Diligence 📊')
