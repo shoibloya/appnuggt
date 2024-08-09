@@ -8,3 +8,4 @@ pandas
 firebase-admin
 langchain-openai 
 tavily-python
+langchain-community
