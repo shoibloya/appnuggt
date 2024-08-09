@@ -24,7 +24,8 @@ import os
 
 if not os.environ.get("TAVILY_API_KEY"):
     os.environ["TAVILY_API_KEY"] = st.secrets['tapiKey']
-
+    os.environ["OPENAI_API_KEY"] = st.secrets['apiKey']
+    
 tools = [TavilySearchResults(max_results=1)]
 
 # Initialize the OpenAI client with your API keys
