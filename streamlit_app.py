@@ -13,6 +13,19 @@ import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import db
 import pandas as pd
+import time 
+from langchain import hub
+from langchain.agents import AgentExecutor, create_openai_tools_agent
+from langchain_community.tools.tavily_search import TavilySearchResults
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate, PromptTemplate, HumanMessagePromptTemplate, MessagesPlaceholder 
+from langchain_core.messages import AIMessage, HumanMessage
+import os
+
+if not os.environ.get("TAVILY_API_KEY"):
+    os.environ["TAVILY_API_KEY"] = st.secrets['tapiKey']
+
+tools = [TavilySearchResults(max_results=1)]
 
 # Initialize the OpenAI client with your API keys
 client = OA(api_key=st.secrets['apiKey'])  # Replace with your actual API key
@@ -220,12 +233,65 @@ def main_view():
         except Exception as e:
             st.error(f"An error occurred while reading the file: {e}")
     
-    
+sys_prompt = """
+You are a digital assistant designed to guide users through a comprehensive market dynamics analysis to identify opportunities for corporate innovation. Your interaction is structured to ensure a thorough exploration of each market factor one at a time. When you use information from a web source, you always provide the link to the original source
+
+Introduction:
+"Welcome to the Market Dynamics Analysis Tool. Let’s identify impactful areas for innovation by analyzing different market factors related to a selected company. Today, we'll be focusing on Shiseido. Which area of market dynamics would you like to explore first? Here are your options:
+1. Consumer Behavior
+2. Economic Conditions
+3. Technological Advances
+4. Competitive Landscape
+5. Regulatory Environment
+
+Step-by-Step Interaction:
+1. User selects a market dynamic (e.g., Consumer Behavior).
+2. You respond: 'Great choice! What specific questions should we consider to understand changes in consumer behavior for Shiseido?'
+3. User provides questions.
+4. You confirm: 'I will now research the following points: [User’s questions]. Does this sound good?'
+5. After user confirmation, you proceed to gather and analyze information.
+6. Present your findings and ask if the user wishes to explore another market dynamic.
+
+Conclusion:
+After covering all desired aspects, conclude with, 'Based on our analysis, here are some innovative opportunities for Shiseido: [summarize opportunities]. What else can I assist you with?'
+
+End each interaction with the phrase, 'This analysis was powered by your dedicated assistant. Let me know how else I can assist you today!'
+"""
+
+prompt = ChatPromptTemplate(
+    input_variables=['agent_scratchpad', 'input'], # Define the input variables your prompt depends on
+    messages=[
+        SystemMessagePromptTemplate(
+            prompt=PromptTemplate(
+            input_variables=[], # No input variables for the system message
+            template=sys_prompt # Use your new text blob here
+            )
+        ),
+        MessagesPlaceholder(variable_name='chat_history', optional=True), # Include chat history if available
+        HumanMessagePromptTemplate(
+            prompt=PromptTemplate(
+                input_variables=['input'], # Assuming 'input' is the variable for the human message
+                template='{input}' # Use the 'input' variable as the template directly
+            )
+        ),
+        MessagesPlaceholder(variable_name='agent_scratchpad') # Include agent scratchpad messages if available
+    ]
+)
+
+# Choose the LLM that will drive the agent
+# Only certain models support this
+llm = ChatOpenAI(model="gpt-4o", temperature=0)
+
+# Construct the OpenAI Tools agent
+agent = create_openai_tools_agent(llm, tools, prompt)
+
+# Create an agent executor by passing in the agent and tools
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
 
 # Sidebar navigation
-app_mode = st.sidebar.selectbox('Choose the app mode', ['Dashboard', 'Due Diligence', 'Admin'])
+app_mode = st.sidebar.selectbox('Choose the app mode', ['Dashboard', 'Due Diligence', 'Ideation', 'Admin'])
 
-import streamlit as st
+import streamlit as st    
 
 # Assume this section is part of a larger application where app_mode is defined
 if app_mode == "Dashboard":
@@ -317,4 +383,42 @@ elif app_mode == "Admin":
     else:
         st.title("Nuggt Admin Login")
         login_form()  # Display the login form if not logged in
+
+elif app_mode == "Ideation":
+    st.title("Ideation chat")
+
+    if "imessages" not in st.session_state:
+        introduction = """Welcome to the Market Dynamics Analysis Tool. Let’s identify impactful areas for innovation by analyzing different market factors related to a selected company. Today, we'll be focusing on Shiseido. Which area of market dynamics would you like to explore first? Here are your options:
+
+        1. Consumer Behavior
+        2. Economic Conditions
+        3. Technological Advances
+        4. Competitive Landscape
+        5. Regulatory Environment
+        """
+        st.session_state.imessages = [HumanMessage(content="introduce yourself"), AIMessage(content=introduction)]
+        
+    if "ihistory" not in st.session_state:
+        introduction = "Welcome to the Market Dynamics Analysis Tool. Let’s identify impactful areas for innovation by analyzing different market factors related to a selected company. Today, we'll be focusing on Shiseido. Which area of market dynamics would you like to explore first? Here are your options:\n1. Consumer Behavior\n2. Economic Conditions\n3. Technological Advances\n4. Competitive Landscape\n5. Regulatory Environment"
+        st.session_state.ihistory = [{"role": "assistant", "content": introduction}]
+    
+    for message in st.session_state.ihistory:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+    
+    # React to user input
+    if prompt := st.chat_input("What is up?"):
+        # Display user message in chat message container
+        st.chat_message("user").markdown(prompt)
+        st.session_state.imessages.append(HumanMessage(content=prompt))
+        st.session_state.ihistory.append({"role": "user", "content": prompt})
+
+        with st.spinner('Thinking...'):
+            response = agent_executor.invoke({"input": prompt, "chat_history": st.session_state.imessages})["output"]
+       
+        with st.chat_message("assistant"):
+            st.write(response)
+        st.session_state.imessages.append(AIMessage(content=response))
+        st.session_state.ihistory.append({"role": "assistant", "content": response})
+        
     
