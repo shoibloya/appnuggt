@@ -290,7 +290,7 @@ agent = create_openai_tools_agent(llm, tools, prompt)
 agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
 
 # Sidebar navigation
-app_mode = st.sidebar.selectbox('Choose the app mode', ['Dashboard', 'Due Diligence', 'Ideation', 'Admin'])
+app_mode = st.sidebar.selectbox('Choose the app mode', ['Ideation', 'Due Diligence', 'Dashboard', 'Admin'])
 
 import streamlit as st    
 
