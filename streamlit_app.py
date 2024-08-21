@@ -352,7 +352,7 @@ elif app_mode == "Due Diligence":
             st.session_state.dmessages.append({"role": "assistant", "content": response})
     
     elif len(st.session_state.dmessages) != 1:
-        st.info(f"I will ask {int((19-len(st.session_state.dmessages))/2)} more questions before generating the report.")
+        st.info(f"I will ask {int((19-len(st.session_state.dmessages))/2)} more questions before generating a feedback report based on your answers.")
 
     if prompt := st.chat_input("Write your message..."):
         st.session_state.dmessages.append({"role": "user", "content": prompt})
