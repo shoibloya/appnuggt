@@ -24,8 +24,7 @@ import os
 
 if not os.environ.get("TAVILY_API_KEY"):
     os.environ["TAVILY_API_KEY"] = st.secrets['tapiKey']
-    os.environ["OPENAI_API_KEY"] = st.secrets['apiKey']
-    
+
 tools = [TavilySearchResults(max_results=1)]
 
 # Initialize the OpenAI client with your API keys
@@ -238,7 +237,7 @@ sys_prompt = """
 You are a digital assistant designed to guide users through a comprehensive market dynamics analysis to identify opportunities for corporate innovation. Your interaction is structured to ensure a thorough exploration of each market factor one at a time. When you use information from a web source, you always provide the link to the original source
 
 Introduction:
-"Welcome to the Market Dynamics Analysis Tool. Let’s identify impactful areas for innovation by analyzing different market factors related to a selected company. Today, we'll be focusing on Shiseido. Which area of market dynamics would you like to explore first? Here are your options:
+"Welcome to the Market Dynamics Analysis Tool. Let’s identify impactful areas for innovation by analyzing different market factors related to a selected company. Please specify a company we should focus on today together with which area of market dynamics would you like to explore first? Here are your options:
 1. Consumer Behavior
 2. Economic Conditions
 3. Technological Advances
@@ -247,14 +246,14 @@ Introduction:
 
 Step-by-Step Interaction:
 1. User selects a market dynamic (e.g., Consumer Behavior).
-2. You respond: 'Great choice! What specific questions should we consider to understand changes in consumer behavior for Shiseido?'
+2. You respond: 'Great choice! What specific questions should we consider to understand changes in consumer behavior for the specified company?'
 3. User provides questions.
 4. You confirm: 'I will now research the following points: [User’s questions]. Does this sound good?'
 5. After user confirmation, you proceed to gather and analyze information.
 6. Present your findings and ask if the user wishes to explore another market dynamic.
 
 Conclusion:
-After covering all desired aspects, conclude with, 'Based on our analysis, here are some innovative opportunities for Shiseido: [summarize opportunities]. What else can I assist you with?'
+After covering all desired aspects, conclude with, 'Based on our analysis, here are some innovative opportunities for the specified company: [summarize opportunities]. What else can I assist you with?'
 
 End each interaction with the phrase, 'This analysis was powered by your dedicated assistant. Let me know how else I can assist you today!'
 """
@@ -290,7 +289,7 @@ agent = create_openai_tools_agent(llm, tools, prompt)
 agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
 
 # Sidebar navigation
-app_mode = st.sidebar.selectbox('Choose the app mode', ['Ideation', 'Due Diligence', 'Dashboard', 'Admin'])
+app_mode = st.sidebar.selectbox('Choose the app mode', ['Dashboard', 'Due Diligence', 'Ideation', 'Admin'])
 
 import streamlit as st    
 
@@ -389,7 +388,7 @@ elif app_mode == "Ideation":
     st.title("Ideation chat")
 
     if "imessages" not in st.session_state:
-        introduction = """Welcome to the Market Dynamics Analysis Tool. Let’s identify impactful areas for innovation by analyzing different market factors related to a selected company. Today, we'll be focusing on Shiseido. Which area of market dynamics would you like to explore first? Here are your options:
+        introduction = """Welcome to the Market Dynamics Analysis Tool. Let’s identify impactful areas for innovation by analyzing different market factors related to a selected company. Please specify a company we should focus on today together with which area of market dynamics would you like to explore first? Here are your options:
 
         1. Consumer Behavior
         2. Economic Conditions
@@ -400,7 +399,7 @@ elif app_mode == "Ideation":
         st.session_state.imessages = [HumanMessage(content="introduce yourself"), AIMessage(content=introduction)]
         
     if "ihistory" not in st.session_state:
-        introduction = "Welcome to the Market Dynamics Analysis Tool. Let’s identify impactful areas for innovation by analyzing different market factors related to a selected company. Today, we'll be focusing on Shiseido. Which area of market dynamics would you like to explore first? Here are your options:\n1. Consumer Behavior\n2. Economic Conditions\n3. Technological Advances\n4. Competitive Landscape\n5. Regulatory Environment"
+        introduction = "Welcome to the Market Dynamics Analysis Tool. Let’s identify impactful areas for innovation by analyzing different market factors related to a selected company. Please specify a company we should focus on today together with which area of market dynamics would you like to explore first? Here are your options:\n1. Consumer Behavior\n2. Economic Conditions\n3. Technological Advances\n4. Competitive Landscape\n5. Regulatory Environment"
         st.session_state.ihistory = [{"role": "assistant", "content": introduction}]
     
     for message in st.session_state.ihistory:
