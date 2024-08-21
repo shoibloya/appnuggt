@@ -318,28 +318,23 @@ elif app_mode == "Due Diligence":
     st.title("Due Diligence")
     
     # Define a list of companies for selection.
-    company_list = ['Greenfield', 'Google', 'Apple', 'Meta', 'Amazon', 'Microsoft']
+    #company_list = ['Greenfield', 'Google', 'Apple', 'Meta', 'Amazon', 'Microsoft']
 
     # Capture the selected company each time the user selects from the dropdown.
-    selected_company = st.selectbox("Which company do you want the bot to represent?", company_list)    
+    #selected_company = st.selectbox("Which company do you want the bot to represent?", company_list)    
 
     if "openai_model" not in st.session_state:
-        st.session_state["openai_model"] = "gpt-4-0125-preview"
+        st.session_state["openai_model"] = "gpt-4o"
 
     if "dmessages" not in st.session_state:
-        st.session_state.dmessages = [{"role": "system", "content": f"You are a virtual due diligence expert for Greenfield innovation projects. Your task is to gather detailed information about users' new business ideas without revealing the structure or sections of the report. Engage users in a conversational manner, asking one question at a time to ensure clarity. Keep your questions short and to the point. Start by asking them to describe their business opportunity and their rationale on why the due diligence team should invest in their business idea. Continue the conversation to gather information on key due diligence findings, assumptions and risks, project overview, market opportunity, strategic alignment, competitive landscape, available resources, technical and business execution feasibility, and the main investment thesis."}]
+        st.session_state.dmessages = [{"role": "system", "content": f"You are a virtual due diligence expert for the specified company. Your task is to gather detailed information about users' new business ideas without revealing the structure or sections of the report. Engage users in a conversational manner, asking one question at a time to ensure clarity. Keep your questions short and to the point. Start by asking them to describe their business opportunity and their rationale on why the company should invest in their business idea. Continue the conversation to gather information on key due diligence findings, assumptions and risks, project overview, market opportunity, strategic alignment, competitive landscape, available resources, technical and business execution feasibility, and the main investment thesis."},
+        {"role": "assistant", "content": f"Welcome to the Due Diligence Bot. I'm here to help you clearly articulate and refine your business idea. By asking targeted questions, I'll gather detailed information that can strengthen your proposal. This ensures all aspects of your idea are thoroughly considered, making it more compelling for potential investors. Before we start, please specify the corporate and the innovation."}]
     
     for message in st.session_state.dmessages:
         if message["role"] != "system" and message["content"] != REPORT_PROMPT:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
-        elif message["role"] == "system" and message["content"] != REPORT_PROMPT:
-            if selected_company != "Greenfield":
-                message["content"] = f"You are a virtual due diligence expert for {selected_company}. Your task is to gather detailed information about users' new business ideas without revealing the structure or sections of the report. Engage users in a conversational manner, asking one question at a time to ensure clarity. Keep your questions short and to the point. Start by asking them to describe their business opportunity and their rationale on why the company should invest in their business idea. Continue the conversation to gather information on key due diligence findings, assumptions and risks, project overview, market opportunity, strategic alignment, competitive landscape, available resources, technical and business execution feasibility, and the main investment thesis."
-            else:
-                message["content"] = f"You are a virtual due diligence expert for Greenfield innovation projects. Your task is to gather detailed information about users' new business ideas without revealing the structure or sections of the report. Engage users in a conversational manner, asking one question at a time to ensure clarity. Keep your questions short and to the point. Start by asking them to describe their business opportunity and their rationale on why the due diligence team should invest in their business idea. Continue the conversation to gather information on key due diligence findings, assumptions and risks, project overview, market opportunity, strategic alignment, competitive landscape, available resources, technical and business execution feasibility, and the main investment thesis."
 
-    
     if len(st.session_state.dmessages) >= 19:
         st.info("You can now generate the due diligence report.")
         if st.button("Generate Report"):
