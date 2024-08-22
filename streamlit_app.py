@@ -20,7 +20,6 @@ from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate, PromptTemplate, HumanMessagePromptTemplate, MessagesPlaceholder 
 from langchain_core.messages import AIMessage, HumanMessage
-import streamlit.components.v1 as components
 import os
 
 if not os.environ.get("TAVILY_API_KEY"):
@@ -34,15 +33,6 @@ tools = [TavilySearchResults(max_results=1)]
 # Initialize the OpenAI client with your API keys
 client = OA(api_key=st.secrets['apiKey'])  # Replace with your actual API key
 st.set_page_config(page_title="Nuggt Dashboard")
-
-html_file_path = "posthog_embed.html"
-
-# Read the HTML file content
-with open(html_file_path, 'r') as f:
-    posthog_html = f.read()
-
-# Embed the HTML file using an iframe
-components.html(posthog_html, height=0, width=0)
 
 # Function to simulate bot response, considering both images and text
 def get_bot_response():
