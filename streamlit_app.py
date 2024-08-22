@@ -21,6 +21,8 @@ from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate, PromptTemplate, HumanMessagePromptTemplate, MessagesPlaceholder 
 from langchain_core.messages import AIMessage, HumanMessage
 import os
+import uuid
+from datetime import datetime
 
 if not os.environ.get("TAVILY_API_KEY"):
     os.environ["TAVILY_API_KEY"] = st.secrets['tapiKey']
@@ -174,6 +176,21 @@ def save_data_to_firebase(data):
     data_dict = data.to_dict(orient='records')
     # Save to Firebase
     ref.push(data_dict)
+
+def start_new_session():
+    # Generate a unique session ID
+    return str(uuid.uuid4())
+
+def upload_conversation_to_firebase(session_id, chat_data):
+    init_firebase()
+    ref = db.reference(f'/chat_sessions/{session_id}')
+    
+    # Adding timestamp for each message
+    timestamp = datetime.now().isoformat()
+    chat_data['timestamp'] = timestamp
+    
+    # Push the chat data to the session
+    ref.push(chat_data)
     
 def main_view():
     st.title("Welcome EMBA!")
@@ -352,7 +369,7 @@ elif app_mode == "Due Diligence":
             st.session_state.dmessages.append({"role": "assistant", "content": response})
     
     elif len(st.session_state.dmessages) != 1:
-        st.info(f"I will ask {int((19-len(st.session_state.dmessages))/2)} more questions before generating a feedback report based on your answers.")
+        st.info(f"I will ask {int((19-len(st.session_state.dmessages))/2)} more questions before generating the report.")
 
     if prompt := st.chat_input("Write your message..."):
         st.session_state.dmessages.append({"role": "user", "content": prompt})
@@ -400,6 +417,9 @@ elif app_mode == "Ideation":
         introduction = "Welcome to the Market Dynamics Analysis Tool. Let’s identify impactful areas for innovation by analyzing different market factors related to a selected company. Please specify a company we should focus on today together with which area of market dynamics would you like to explore first? Here are your options:\n1. Consumer Behavior\n2. Economic Conditions\n3. Technological Advances\n4. Competitive Landscape\n5. Regulatory Environment"
         st.session_state.ihistory = [{"role": "assistant", "content": introduction}]
     
+    if "session" not in st.session_state:
+        st.session_state.session = start_new_session()
+
     for message in st.session_state.ihistory:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
@@ -410,6 +430,7 @@ elif app_mode == "Ideation":
         st.chat_message("user").markdown(prompt)
         st.session_state.imessages.append(HumanMessage(content=prompt))
         st.session_state.ihistory.append({"role": "user", "content": prompt})
+        upload_conversation_to_firebase(st.session_state.session, {"role": "user", "message": prompt})
 
         with st.spinner('Thinking...'):
             response = agent_executor.invoke({"input": prompt, "chat_history": st.session_state.imessages})["output"]
@@ -418,5 +439,6 @@ elif app_mode == "Ideation":
             st.write(response)
         st.session_state.imessages.append(AIMessage(content=response))
         st.session_state.ihistory.append({"role": "assistant", "content": response})
+        upload_conversation_to_firebase(st.session_state.session, {"role": "assistant", "message": response})
         
     
