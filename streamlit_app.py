@@ -146,7 +146,7 @@ def login_form():
         if submit_button:
             if check_credentials(username, password):
                 st.session_state['logged_in'] = True  # Update session state
-                st.experimental_rerun()  # Rerun the app to update the view
+                st.rerun()  # Rerun the app to update the view
             else:
                 st.error("Error: Enter correct username/password")
 
