@@ -201,7 +201,7 @@ def main_view():
     with col1:
         st.subheader("Personal Information")
         st.write("Name: EMBA")
-        st.write("Email: emba_prog@nus.edu.sg")
+        st.write("Email: sirajuddin@nus.edu.sg")
         st.write("Organisation: National University of Singapore")
         active_accounts_view()
         
@@ -209,10 +209,11 @@ def main_view():
         st.subheader("Account Details")
         #st.image("demo.png", width=300)
         st.write("Type: Large classroom")
-        st.write("Expiry: 6th September 2024")
+        st.write("Expiry: 5th October 2024")
         st.write("Student Accounts: 60")
         st.subheader("Accessible Tools")
         st.info('Due Diligence 📊')
+        st.info('Ideation Tool')
         
     
     st.subheader("Send Student Invitations")
@@ -328,6 +329,7 @@ if app_mode == "Dashboard":
     with col2:
         st.header("Accessible Tools")
         st.info('Due Diligence 📊')
+        st.info('Ideation')
 
 elif app_mode == "Due Diligence":
 
