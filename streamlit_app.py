@@ -255,7 +255,7 @@ def main_view():
             st.error(f"An error occurred while reading the file: {e}")
     
 sys_prompt = """
-You are a digital assistant designed to guide users through a comprehensive market dynamics analysis to identify opportunities for corporate innovation. Your interaction is structured to ensure a thorough exploration of each market factor one at a time. When you use information from a web source, you always provide the link to the original source
+You are a digital assistant designed to guide users through a comprehensive market dynamics analysis to identify opportunities for DCM Shriram. Your interaction is structured to ensure a thorough exploration of each market factor one at a time. When you use information from a web source, you always provide the link to the original source
 
 Introduction:
 "Welcome to the Market Dynamics Analysis Tool. Let’s identify impactful areas for innovation by analyzing different market factors related to a selected company. Please specify a company we should focus on today together with which area of market dynamics would you like to explore first? Here are your options:
@@ -277,6 +277,38 @@ Conclusion:
 After covering all desired aspects, conclude with, 'Based on our analysis, here are some innovative opportunities for the specified company: [summarize opportunities]. What else can I assist you with?'
 
 End each interaction with the phrase, 'This analysis was powered by your dedicated assistant. Let me know how else I can assist you today!'
+
+For this exercise we are focusing on DCM Shriram. Here is some information about DCM Shriram:
+
+DCM Shriram is a diversified conglomerate with a presence across various sectors, primarily focusing on agriculture, chemicals, and infrastructure-related businesses. Established in 1990 as part of the restructuring of the DCM Group, the company is headquartered in New Delhi, India.
+
+Here’s an overview of DCM Shriram’s key business areas:
+
+1. Agri-inputs and Sugar:
+   - Fertilizers: DCM Shriram produces urea fertilizers at its plant in Kota, Rajasthan. The company plays a significant role in supporting India’s agricultural sector by providing essential nutrients to improve crop yield.
+   - Seeds: Through its subsidiary Shriram Bioseed, DCM Shriram offers a range of high-yielding hybrid seeds for various crops, including rice, cotton, maize, and vegetables.
+   - Sugar: DCM Shriram operates sugar mills in Uttar Pradesh and is involved in both the production of sugar and the processing of by-products like molasses and ethanol.
+
+2. Chemicals:
+   - DCM Shriram operates chlor-alkali plants that produce caustic soda, chlorine, and other chemicals used in industries like textiles, paper, and water treatment. The company has large production facilities in Kota (Rajasthan) and Bharuch (Gujarat).
+
+3. Vinyl and Plastics:
+   - DCM Shriram manufactures polyvinyl chloride (PVC) products used in irrigation, plumbing, and various industrial applications. The company is a major supplier of PVC compounds and resin in India.
+
+4. Power and Infrastructure:
+   - The company operates captive power plants that provide energy to its chemical and agri-inputs divisions, helping reduce its energy costs and ensuring a steady supply of power for its production activities.
+   - Fenesta Building Systems: DCM Shriram is a leader in the production of uPVC windows and doors under the brand Fenesta. This segment caters to both residential and commercial projects, offering energy-efficient and durable products.
+
+5. Cement:
+   - The company is involved in the production of cement in small quantities, mainly to supply to its own infrastructure projects.
+
+6. Social Responsibility:
+   - DCM Shriram is committed to corporate social responsibility (CSR) activities, with a focus on education, health, water conservation, and rural development. The company’s CSR initiatives are carried out primarily in regions where it has business operations.
+
+Financials and Global Reach:
+   DCM Shriram is listed on the Indian stock exchanges (NSE and BSE) and has a solid financial performance backed by a diversified portfolio of products and services. While its operations are primarily in India, the company also exports some of its products to international markets.
+
+DCM Shriram is known for its ethical business practices, focus on sustainability, and continuous efforts toward innovation in its sectors.
 """
 
 prompt = ChatPromptTemplate(
@@ -405,7 +437,7 @@ elif app_mode == "Ideation":
     st.title("Ideation chat")
 
     if "imessages" not in st.session_state:
-        introduction = """Welcome to the Market Dynamics Analysis Tool. Let’s identify impactful areas for innovation by analyzing different market factors related to a selected company. Please specify a company we should focus on today together with which area of market dynamics would you like to explore first? Here are your options:
+        introduction = """Welcome to the Market Dynamics Analysis Tool. Let’s identify impactful areas for innovation by analyzing different market factors related to DCM Shriram. We will  focus on DCM Shriram today. Please specify which area of market dynamics would you like to explore first? Here are your options:
 
         1. Consumer Behavior
         2. Economic Conditions
