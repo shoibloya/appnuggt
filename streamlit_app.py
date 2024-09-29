@@ -333,7 +333,7 @@ prompt = ChatPromptTemplate(
 
 # Choose the LLM that will drive the agent
 # Only certain models support this
-llm = ChatOpenAI(model="gpt-4o", temperature=0)
+llm = ChatOpenAI(model="o1-preview", temperature=0)
 
 # Construct the OpenAI Tools agent
 agent = create_openai_tools_agent(llm, tools, prompt)
@@ -375,7 +375,7 @@ elif app_mode == "Due Diligence":
     #selected_company = st.selectbox("Which company do you want the bot to represent?", company_list)    
 
     if "openai_model" not in st.session_state:
-        st.session_state["openai_model"] = "gpt-4o"
+        st.session_state["openai_model"] = "o1-preview"
 
     if "dmessages" not in st.session_state:
         st.session_state.dmessages = [{"role": "system", "content": f"You are a virtual due diligence expert for the specified company. Your task is to gather detailed information about users' new business ideas without revealing the structure or sections of the report. Engage users in a conversational manner, asking one question at a time to ensure clarity. Keep your questions short and to the point. Start by asking them to describe their business opportunity and their rationale on why the company should invest in their business idea. Continue the conversation to gather information on key due diligence findings, assumptions and risks, project overview, market opportunity, strategic alignment, competitive landscape, available resources, technical and business execution feasibility, and the main investment thesis."},
