@@ -387,7 +387,7 @@ elif app_mode == "Due Diligence":
                 ],
                 stream=False,
             )
-            response = st.write_stream(stream.choices[0].message.content)
+            response = st.write(stream.choices[0].message.content)
         st.session_state.dmessages.append({"role": "assistant", "content": response})
 
 elif app_mode == "Admin":
