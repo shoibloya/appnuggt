@@ -277,38 +277,6 @@ Conclusion:
 After covering all desired aspects, conclude with, 'Based on our analysis, here are some innovative opportunities for the specified company: [summarize opportunities]. What else can I assist you with?'
 
 End each interaction with the phrase, 'This analysis was powered by your dedicated assistant. Let me know how else I can assist you today!'
-
-For this exercise we are focusing on DCM Shriram. Here is some information about DCM Shriram:
-
-DCM Shriram is a diversified conglomerate with a presence across various sectors, primarily focusing on agriculture, chemicals, and infrastructure-related businesses. Established in 1990 as part of the restructuring of the DCM Group, the company is headquartered in New Delhi, India.
-
-Here’s an overview of DCM Shriram’s key business areas:
-
-1. Agri-inputs and Sugar:
-   - Fertilizers: DCM Shriram produces urea fertilizers at its plant in Kota, Rajasthan. The company plays a significant role in supporting India’s agricultural sector by providing essential nutrients to improve crop yield.
-   - Seeds: Through its subsidiary Shriram Bioseed, DCM Shriram offers a range of high-yielding hybrid seeds for various crops, including rice, cotton, maize, and vegetables.
-   - Sugar: DCM Shriram operates sugar mills in Uttar Pradesh and is involved in both the production of sugar and the processing of by-products like molasses and ethanol.
-
-2. Chemicals:
-   - DCM Shriram operates chlor-alkali plants that produce caustic soda, chlorine, and other chemicals used in industries like textiles, paper, and water treatment. The company has large production facilities in Kota (Rajasthan) and Bharuch (Gujarat).
-
-3. Vinyl and Plastics:
-   - DCM Shriram manufactures polyvinyl chloride (PVC) products used in irrigation, plumbing, and various industrial applications. The company is a major supplier of PVC compounds and resin in India.
-
-4. Power and Infrastructure:
-   - The company operates captive power plants that provide energy to its chemical and agri-inputs divisions, helping reduce its energy costs and ensuring a steady supply of power for its production activities.
-   - Fenesta Building Systems: DCM Shriram is a leader in the production of uPVC windows and doors under the brand Fenesta. This segment caters to both residential and commercial projects, offering energy-efficient and durable products.
-
-5. Cement:
-   - The company is involved in the production of cement in small quantities, mainly to supply to its own infrastructure projects.
-
-6. Social Responsibility:
-   - DCM Shriram is committed to corporate social responsibility (CSR) activities, with a focus on education, health, water conservation, and rural development. The company’s CSR initiatives are carried out primarily in regions where it has business operations.
-
-Financials and Global Reach:
-   DCM Shriram is listed on the Indian stock exchanges (NSE and BSE) and has a solid financial performance backed by a diversified portfolio of products and services. While its operations are primarily in India, the company also exports some of its products to international markets.
-
-DCM Shriram is known for its ethical business practices, focus on sustainability, and continuous efforts toward innovation in its sectors.
 """
 
 prompt = ChatPromptTemplate(
@@ -419,7 +387,7 @@ elif app_mode == "Due Diligence":
                 ],
                 stream=False,
             )
-            response = st.write_stream(stream)
+            response = st.write_stream(stream.choices[0].message.content)
         st.session_state.dmessages.append({"role": "assistant", "content": response})
 
 elif app_mode == "Admin":
