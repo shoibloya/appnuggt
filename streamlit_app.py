@@ -397,7 +397,7 @@ elif app_mode == "Due Diligence":
                         {"role": m["role"], "content": m["content"]}
                         for m in st.session_state.dmessages
                     ],
-                    stream=True,
+                    stream=False,
                 )
                 response = st.write_stream(stream)
             st.session_state.dmessages.append({"role": "assistant", "content": response})
@@ -417,7 +417,7 @@ elif app_mode == "Due Diligence":
                     {"role": m["role"], "content": m["content"]}
                     for m in st.session_state.dmessages
                 ],
-                stream=True,
+                stream=False,
             )
             response = st.write_stream(stream)
         st.session_state.dmessages.append({"role": "assistant", "content": response})
