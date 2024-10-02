@@ -642,7 +642,7 @@ if 'user_input' in st.session_state:
     JSON format:
 
     {{
-      "Overview": "Short description of the innovation",
+      "Overview": "Clear description of the innovation and the idea.",
       "big_picture_innovation": {{
         "story": {{
           "past_character": {{
@@ -758,7 +758,7 @@ if 'user_input' in st.session_state:
     """
     messages = [
         SystemMessage(content=sys_final_innovation),
-        HumanMessage(content=f"Marketing Dynamics Analysis:\n{market_dynamics}\n\nRemember to make use of statistics to make your case."),
+        HumanMessage(content=f"Marketing Dynamics Analysis:\n{market_dynamics}"),
     ]
     model = ChatOpenAI(model="gpt-4o-mini", temperature=0)
     result = model.invoke(messages)
@@ -768,9 +768,9 @@ if 'user_input' in st.session_state:
 
     messages = [
         SystemMessage(content=sys_final_innovation),
-        HumanMessage(content=f"Marketing Dynamics Analysis:\n{market_dynamics}\n\nRemember to make use of statistics to make your case.\n\nCome up with an idea that is different from {idea_1}"),
+        HumanMessage(content=f"Marketing Dynamics Analysis:\n{market_dynamics}\n\nCome up with an idea that is different from {idea_1}"),
     ]
-    model = ChatOpenAI(model="gpt-4o", temperature=0)
+    model = ChatOpenAI(model="gpt-4o", temperature=1)
     result = model.invoke(messages)
     data = parser.invoke(result)
     idea_2 = data["Overview"]
