@@ -528,18 +528,18 @@ if 'user_input' in st.session_state:
     with report_expander:
       st.warning(f"Key Insights Report")
     
-    idea_expander = st.expander(f"Proposed Innovation By O1-Preview [Powerful Model]", expanded=False)
-    with idea_expander:
-      st.warning(f"Innovation Pitch Deck (O1-Preview)")
-    
-    idea_standard = st.expander(f"Proposed Innovation By GPT-4o [Standard Model]", expanded=False)
-    with idea_standard:
-      st.warning(f"Innovation Pitch Deck (GPT-4o)")
-    
     idea_simple = st.expander(f"Proposed Innovation By GPT-4o-mini [Simple Model]", expanded=False)
     with idea_simple:
       st.warning(f"Innovation Pitch Deck (GPT-4o-mini)")
-    
+
+    idea_standard = st.expander(f"Proposed Innovation By GPT-4o [Standard Model]", expanded=False)
+    with idea_standard:
+      st.warning(f"Innovation Pitch Deck (GPT-4o)")
+        
+    idea_expander = st.expander(f"Proposed Innovation By O1-Preview [Powerful Model]", expanded=False)
+    with idea_expander:
+      st.warning(f"Innovation Pitch Deck (O1-Preview)")
+        
     # Second loop to populate the expanders with the content
     for category, searches in answer['searches'].items():
         market_dynamics += f"\n{category}"
@@ -756,34 +756,35 @@ if 'user_input' in st.session_state:
 
     Strictly stick to this JSON format and do not reply anything else. 
     """
+    messages = [
+        SystemMessage(content=sys_final_innovation),
+        HumanMessage(content=f"Marketing Dynamics Analysis:\n{market_dynamics}\n\nRemember to make use of statistics to make your case."),
+    ]
+    model = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    result = model.invoke(messages)
+    data = parser.invoke(result)
+    idea_1 = data["Overview"]
+    pitch_idea(idea_simple, data)
 
     messages = [
+        SystemMessage(content=sys_final_innovation),
+        HumanMessage(content=f"Marketing Dynamics Analysis:\n{market_dynamics}\n\nRemember to make use of statistics to make your case.\n\nCome up with an idea that is different from {idea_1}"),
+    ]
+    model = ChatOpenAI(model="gpt-4o", temperature=0)
+    result = model.invoke(messages)
+    data = parser.invoke(result)
+    idea_2 = data["Overview"]
+    pitch_idea(idea_standard, data)
+    
+    messages = [
         #SystemMessage(content=sys_final_innovation),
-        HumanMessage(content=f"{sys_final_innovation}\n\nMarketing Dynamics Analysis:\n{market_dynamics}\n\nRemember to make use of statistics to make your case."),
+        HumanMessage(content=f"{sys_final_innovation}\n\nMarketing Dynamics Analysis:\n{market_dynamics}\n\nRemember to make use of statistics to make your case.\n\nCome up with an idea that is different from {idea_1} and different from {idea_2}"),
     ]
     model = ChatOpenAI(model="o1-preview", temperature=1)
     result = model.invoke(messages)
     data = parser.invoke(result)
     pitch_idea(idea_expander, data)
-    idea_1 = data["Overview"]
-    messages = [
-        SystemMessage(content=sys_final_innovation),
-        HumanMessage(content=f"Marketing Dynamics Analysis:\n{market_dynamics}\n\nCome up with an idea that is different from {idea_1}"),
-    ]
-    model = ChatOpenAI(model="gpt-4o", temperature=0)
-    result = model.invoke(messages)
-    data = parser.invoke(result)
-    pitch_idea(idea_standard, data)
-    idea_2 = data["Overview"]
-    messages = [
-        SystemMessage(content=sys_final_innovation),
-        HumanMessage(content=f"Marketing Dynamics Analysis:\n{market_dynamics}\n\nCome up with an idea that is different from {idea_1} and from {idea_2}"),
-    ]
-    model = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-    result = model.invoke(messages)
-    data = parser.invoke(result)
-    pitch_idea(idea_simple, data)
-
+    
 else:
   default_instructions = """
 # **Welcome to the Innovation Pitch Deck Generator**
