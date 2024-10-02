@@ -1,28 +1,16 @@
 import streamlit as st
-from openai import OpenAI as OA
-from PIL import Image
-import io
-import base64
-from langchain.llms import OpenAI
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import FAISS
-from langchain.chains import RetrievalQA
-from langchain.document_loaders import PyMuPDFLoader
-import tempfile
-import firebase_admin
-from firebase_admin import credentials
-from firebase_admin import db
-import pandas as pd
-import time 
+import os
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.output_parsers import JsonOutputParser, StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate, PromptTemplate, HumanMessagePromptTemplate, MessagesPlaceholder
 from langchain import hub
 from langchain.agents import AgentExecutor, create_openai_tools_agent
 from langchain_community.tools.tavily_search import TavilySearchResults
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate, PromptTemplate, HumanMessagePromptTemplate, MessagesPlaceholder 
-from langchain_core.messages import AIMessage, HumanMessage
-import os
-import uuid
-from datetime import datetime
+
+# Setting up necessary environment variables
+parser = JsonOutputParser()
+str_parser = StrOutputParser()
 
 if not os.environ.get("TAVILY_API_KEY"):
     os.environ["TAVILY_API_KEY"] = st.secrets['tapiKey']
@@ -30,253 +18,193 @@ if not os.environ.get("TAVILY_API_KEY"):
 if not os.environ.get("OPENAI_API_KEY"):
     os.environ["OPENAI_API_KEY"] = st.secrets['apiKey']
 
-tools = [TavilySearchResults(max_results=1)]
+model = ChatOpenAI(model="gpt-4o", temperature=0)
+tools = [TavilySearchResults(max_results=3, include_answer=True, include_raw_content=True, search_depth="advanced")]
 
-# Initialize the OpenAI client with your API keys
-client = OA(api_key=st.secrets['apiKey'])  # Replace with your actual API key
-st.set_page_config(page_title="Nuggt Dashboard")
+st.set_page_config(page_title="Nuggt Dashboard", layout="wide")
 
-# Function to simulate bot response, considering both images and text
-def get_bot_response():
-    # Convert messages for the API call, handling text and images differently
-    messages_for_api = []
-    for m in st.session_state.messages:
-        if m['role'] == 'user' and 'is_photo' in m and m['is_photo']:
-            # For images, convert to base64 and create the proper structure
-            image_base64 = image_to_base64(m['content'])
-            image_url = "data:image/jpeg;base64," + image_base64
-            messages_for_api.append({
-                "role": "user",
-                "content": [{"type": "image_url", "image_url": {"url": image_url}}]
-            })
-        else:
-            # For text messages, keep the structure simple
-            messages_for_api.append({
-                "role": m['role'],
-                "content": [{"type": "text", "text": m['content']}]
-            })
-
-    # Make the API call
-    response = client.chat.completions.create(
-        model="gpt-4-vision-preview",  # Use the correct model that supports images
-        messages=messages_for_api,
-        max_tokens=4000,
-    )
-
-    # Append the bot's response to the session state messages
-    if response.choices:
-        st.session_state.messages.append({"role": "assistant", "content": response.choices[0].message.content})
-        with st.chat_message(st.session_state['messages'][-1]['role']):
-            st.markdown(st.session_state['messages'][-1]['content'])
-
-def generate_response(uploaded_file, openai_api_key, query_text):
-    # Load document if file is uploaded
-    if uploaded_file is not None:
-        with tempfile.NamedTemporaryFile(delete=False) as tmp:
-            tmp.write(uploaded_file.getvalue())
-            loader = PyMuPDFLoader(tmp.name)
-            pages = loader.load_and_split()
-            db = FAISS.from_documents(pages, OpenAIEmbeddings(openai_api_key=openai_api_key))
-            # Create retriever interface
-            retriever = db.as_retriever(search_type="similarity", search_kwargs={"k":2})
-            # Create QA chain
-            qa = RetrievalQA.from_chain_type(llm=OpenAI(openai_api_key=openai_api_key), chain_type='stuff', retriever=retriever)
-            print("Answer generated")
-            return qa.run(query_text)
-
-def image_to_base64(image):
-    # Convert RGBA to RGB
-    if image.mode in ("RGBA", "LA"):
-        background = Image.new(image.mode[:-1], image.size, (255, 255, 255))
-        background.paste(image, image.split()[-1])
-        image = background
-
-    buffered = io.BytesIO()
-    image.save(buffered, format="JPEG")
-    return base64.b64encode(buffered.getvalue()).decode()
-
-def generate_report(client, conversation):
-    # This function simulates generating a report based on the conversation.
-    # Replace this with your actual implementation using the OpenAI API or any other model.
-    # Example:
-    response = client.completions.create(
-        model="text-davinci-003",  # Use an appropriate model
-        prompt=conversation,
-        temperature=0.7,
-        max_tokens=1024,
-        top_p=1.0,
-        frequency_penalty=0.0,
-        presence_penalty=0.0
-    )
-    return response.choices[0].text 
-
-def init_firebase():
-    if not firebase_admin._apps:
-        cred = credentials.Certificate("nuggt-nus-firebase-adminsdk-57mm7-b03004fe53.json")
-        firebase_admin.initialize_app(cred, {
-            'databaseURL': 'https://nuggt-nus-default-rtdb.firebaseio.com'
-        })
-
-def fetch_data_from_firebase():
-    init_firebase()
-    ref = db.reference('/uploaded_data')  # Adjust this path to your data in Firebase
-    data = ref.get()
-    if data is None:
-        return pd.DataFrame()  # Return an empty DataFrame if no data
-    else:
-        # Create a DataFrame from a list of dictionaries
-        students = [value[0] for key, value in data.items()]
-        print(list(data.values())[0])
-        return pd.DataFrame(list(data.values())[0])
-
-def check_credentials(username, password):
-    correct_username = "emba_nus"
-    #correct_password = st.secrets["admin"]
-    correct_password = "!ev3CN8z@Pp"
-    if username == correct_username and password == correct_password:
-        return True
-    return False
-
-def login_form():
-    with st.form("login_form"):
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        submit_button = st.form_submit_button("Login")
-        
-        if submit_button:
-            if check_credentials(username, password):
-                st.session_state['logged_in'] = True  # Update session state
-                st.rerun()  # Rerun the app to update the view
-            else:
-                st.error("Error: Enter correct username/password")
-
-def active_accounts_view():
-    st.subheader("Active Accounts")
+# Sidebar to take user input
+with st.sidebar:
+    corporate = st.text_input("Corporate (e.g. Amazon)", "Amazon")
+    industry = st.text_input("Industry", "E-commerce")
+    company_overview = st.text_area("Company Overview (What does the company do?)", "")
+    competitors = st.text_area("Competitors (Who are the key competitors?)", "")
+    geographic_focus = st.text_input("Geographic Focus (Primary regions of operation)", "")
+    customer_base = st.text_area("Customer Base (e.g., B2B, B2C, demographics)", "")
+    recent_news = st.text_area("Recent News/Developments (Any recent major news?)", "")
+    key_challenges = st.text_area("Key Challenges (Current challenges in the market?)", "")
+    business_model = st.text_area("Business Model (How does the company generate revenue?)", "")
+    rough_idea = st.text_area("Rough Idea (optional)", "")
+    additional_insights = st.text_area("Additional Insights", "")
     
-    # Fetch data from Firebase
-    df = fetch_data_from_firebase()
-    if len(df) > 0:
-        df = df[['Student Name', 'Email']]
+    if st.button("Create Innovation Pitch", key="create_pitch_button"):
+        # Store the input values into session state to use later
+        st.session_state['user_input'] = {
+            'corporate': corporate,
+            'industry': industry,
+            'company_overview': company_overview,
+            'competitors': competitors,
+            'geographic_focus': geographic_focus,
+            'customer_base': customer_base,
+            'recent_news': recent_news,
+            'key_challenges': key_challenges,
+            'business_model': business_model,
+            'rough_idea': rough_idea,
+            'additional_insights': additional_insights
+        }
 
-    # Display number of accounts and progress
-    total_accounts = len(df)
-    st.write(f"Number of Active Accounts: {total_accounts} out of 60")
-    
-    # Progress bar
-    progress = total_accounts / 60.0
-    st.progress(progress)
 
-    # Display DataFrame
-    #if not df.empty:
-    #    st.dataframe(df, width=800, height=300)  # DataFrame should now be correctly formatted
+# Fetch the user input from session state
+user_input = st.session_state.get('user_input', {})
 
-def save_data_to_firebase(data):
-    ref = db.reference('/uploaded_data')
-    # Convert DataFrame to dictionary
-    data_dict = data.to_dict(orient='records')
-    # Save to Firebase
-    ref.push(data_dict)
+# Update the system prompts dynamically based on user input
+sys_prompt_search_agent = f"""
+You are an expert of the market analysis framework. In this case, you are conducting
+market analysis for the team at {user_input.get('corporate', 'a company')} who are trying to identify the 
+next disruptive opportunity in the {user_input.get('industry', 'industry')}. 
 
-def start_new_session():
-    # Generate a unique session ID
-    return str(uuid.uuid4())
+{'The company overview is as follows: ' + user_input.get("company_overview") if user_input.get("company_overview") else ''}
+{'They compete with the following competitors: ' + user_input.get("competitors") if user_input.get("competitors") else ''}
+{'They operate primarily in: ' + user_input.get("geographic_focus") if user_input.get("geographic_focus") else ''}
+{'Their customer base is: ' + user_input.get("customer_base") if user_input.get("customer_base") else ''}
+{'Their business model includes: ' + user_input.get("business_model") if user_input.get("business_model") else ''}
+{'They are currently facing these key challenges: ' + user_input.get("key_challenges") if user_input.get("key_challenges") else ''}
+{'Recent developments or news about the company include: ' + user_input.get("recent_news") if user_input.get("recent_news") else ''}
+{'The company is considering the following rough idea: ' + user_input.get("rough_idea") if user_input.get("rough_idea") else ''}
+{'Additional insights include: ' + user_input.get("additional_insights") if user_input.get("additional_insights") else ''}
 
-def upload_conversation_to_firebase(session_id, chat_data):
-    init_firebase()
-    ref = db.reference(f'/chat_sessions/{session_id}')
-    
-    # Adding timestamp for each message
-    timestamp = datetime.now().isoformat()
-    chat_data['timestamp'] = timestamp
-    
-    # Push the chat data to the session
-    ref.push(chat_data)
-    
-def main_view():
-    st.title("Welcome EMBA!")
+From your research, extract key points that will be useful
+for the team to come up with new innovations. Present your findings and data in a concise manner
+in less than 5 detailed points. For all your answers, you always provide the source in the form of a link.
+"""
 
-    # Displaying user information
-    col1, col2 = st.columns(2)
+sys_prompt_market_analysis = f"""
+You are a corporate innovation expert. Given a company your job is 
+to propose corporate innovation projects that the company can consider. 
 
-    with col1:
-        st.subheader("Personal Information")
-        st.write("Name: EMBA")
-        st.write("Email: sirajuddin@nus.edu.sg")
-        st.write("Organisation: National University of Singapore")
-        active_accounts_view()
-        
-    with col2:
-        st.subheader("Account Details")
-        #st.image("demo.png", width=300)
-        st.write("Type: Large classroom")
-        st.write("Expiry: 5th October 2024")
-        st.write("Student Accounts: 60")
-        st.subheader("Accessible Tools")
-        st.info('Due Diligence 📊')
-        st.info('Ideation Tool')
-        
-    
-    st.subheader("Send Student Invitations")
-    st.success("Please upload a CSV file containing only two columns, titled 'Student Name' and 'Email'. Once you upload the email list, you will be able to send invitations to students at their email addresses. The invitation will include a link to the app and a PDF with instructions on how to use it.")
-   
-    # File upload section
-    uploaded_file = st.file_uploader("Upload a CSV file with student names and emails", type="csv")
-    
-    if uploaded_file is not None:
-        try:
-            # Read the CSV file into a DataFrame
-            data = pd.read_csv(uploaded_file)
-            
-            # Check if required columns are present
-            required_columns = ['Student Name','Email']
-            if all(column in data.columns for column in required_columns):
-                col1, col2 = st.columns([0.8, 0.2])
+You identify innovation opportunities based on the Market Analysis Framework
+which includes the following:
 
-                with col1:
-                    st.info("CSV file is valid and contains the required columns. Ready to send invitations!")
-                
-                # Display the DataFrame on the screen
-                #st.dataframe(data[required_columns], width=800, height=300)
-                
-                with col2:
-                    # Button to send invitations
-                    if st.button('Send Invitation'):
-                        st.session_state['button_pressed'] = True
-                
-                if 'button_pressed' in st.session_state and st.session_state['button_pressed']:
-                    save_data_to_firebase(data[required_columns])
-                    # Generate and send email to each student
-                    st.success("The email list has been successfully uploaded. For security reasons, invitation emails will be sent to all students within the next 24 hours. Upon completion, the number of active students will be updated on your profile. You will receive a notification via email once all invitations have been sent.")
-                    #active_accounts_view()
-            else:
-                st.error("The uploaded CSV file does not contain the required columns 'Student Name' and 'Email'.")
-        
-        except Exception as e:
-            st.error(f"An error occurred while reading the file: {e}")
-    
-sys_prompt = """
-You are a digital assistant designed to guide users through a comprehensive market dynamics analysis to identify opportunities for DCM Shriram. Your interaction is structured to ensure a thorough exploration of each market factor one at a time. When you use information from a web source, you always provide the link to the original source
-
-Introduction:
-"Welcome to the Market Dynamics Analysis Tool. Let’s identify impactful areas for innovation by analyzing different market factors related to a selected company. Please specify a company we should focus on today together with which area of market dynamics would you like to explore first? Here are your options:
 1. Consumer Behavior
 2. Economic Conditions
 3. Technological Advances
 4. Competitive Landscape
 5. Regulatory Environment
 
-Step-by-Step Interaction:
-1. User selects a market dynamic (e.g., Consumer Behavior).
-2. You respond: 'Great choice! What specific questions should we consider to understand changes in consumer behavior for the specified company?'
-3. User provides questions.
-4. You confirm: 'I will now research the following points: [User’s questions]. Does this sound good?'
-5. After user confirmation, you proceed to gather and analyze information.
-6. Present your findings and ask if the user wishes to explore another market dynamic.
+Given the company {user_input.get('corporate', 'a company')} in the {user_input.get('industry', 'industry')} industry,
+{',with the following overview: ' + user_input.get("company_overview") if user_input.get("company_overview") else ''}
+{',with the following competitors: ' + user_input.get("competitors") if user_input.get("competitors") else ''}
+{',that operate primarily in: ' + user_input.get("geographic_focus") if user_input.get("geographic_focus") else ''}
+{',with the following customer base: ' + user_input.get("customer_base") if user_input.get("customer_base") else ''}
+{',with the following business model: ' + user_input.get("business_model") if user_input.get("business_model") else ''}
+{',that is currently facing the following key challenges: ' + user_input.get("key_challenges") if user_input.get("key_challenges") else ''}
+{',has the following recent developments or news: ' + user_input.get("recent_news") if user_input.get("recent_news") else ''}
+{',and the following rough idea: ' + user_input.get("rough_idea") if user_input.get("rough_idea") else ''}
+{',and considering additional insights: ' + user_input.get("additional_insights") if user_input.get("additional_insights") else ''}
 
-Conclusion:
-After covering all desired aspects, conclude with, 'Based on our analysis, here are some innovative opportunities for the specified company: [summarize opportunities]. What else can I assist you with?'
+Come up with google searches in the following JSON format:
 
-End each interaction with the phrase, 'This analysis was powered by your dedicated assistant. Let me know how else I can assist you today!'
+{{
+  "searches": {{
+    "Consumer Behavior": [
+      {{
+        "search": "Google search 1",
+        "importance": "Rationale behind this search"
+      }},
+      {{
+        "search": "Google search 2",
+        "importance": "Rationale behind this search"
+      }},
+      {{
+        "search": "Google search 3",
+        "importance": "Rationale behind this search"
+      }},
+    ],
+    "Economic Conditions": [
+      {{
+        "search": "Google search 1",
+        "importance": "Rationale behind this search"
+      }},
+      {{
+        "search": "Google search 2",
+        "importance": "Rationale behind this search"
+      }},
+      {{
+        "search": "Google search 3",
+        "importance": "Rationale behind this search"
+      }},
+    ],
+    "Technological Advances": [
+      {{
+        "search": "Google search 1",
+        "importance": "Rationale behind this search"
+      }},
+      {{
+        "search": "Google search 2",
+        "importance": "Rationale behind this search"
+      }},
+      {{
+        "search": "Google search 3",
+        "importance": "Rationale behind this search"
+      }},
+    ],
+    "Competitive Landscape": [
+      {{
+        "search": "Google search 1",
+        "importance": "Rationale behind this search"
+      }},
+      {{
+        "search": "Google search 2",
+        "importance": "Rationale behind this search"
+      }},
+      {{
+        "search": "Google search 3",
+        "importance": "Rationale behind this search"
+      }},
+    ],
+    "Regulatory Environment": [
+      {{
+        "search": "Google search 1",
+        "importance": "Rationale behind this search"
+      }},
+      {{
+        "search": "Google search 2",
+        "importance": "Rationale behind this search"
+      }},
+      {{
+        "search": "Google search 3",
+        "importance": "Rationale behind this search"
+      }},
+    ]
+  }}
+}}
+
+Ensure that the search queries within the same category do not overlap. Queries within
+the same category must be different from each other in order to properly cover all major
+topics under that category.
+"""
+
+sys_prompt_depth_research = f"""
+You are an expert of the market dynamics analysis framework. 
+Your job is to conduct market dynamics analysis using Google. When you are
+presented with information and data from general research about {user_input.get('corporate', 'a company')} in the {user_input.get('industry', 'industry')} industry,
+you come up with 2 specific google search queries to gain more information and new data on crucial findings.
+Your queries must be specific. We do not want general queries. Strictly specific queries
+to facilitate in-depth research. Think critically when asking for the following queries. 
+Come up with google searches in the following JSON format: 
+
+{{
+  "queries": [
+    {{
+      "query": "<your first query>"
+    }},
+    {{
+      "query": "<your second query>"
+    }},
+  ]
+}}
+
+Your answers must strictly be in this JSON format.
 """
 
 prompt = ChatPromptTemplate(
@@ -285,162 +213,679 @@ prompt = ChatPromptTemplate(
         SystemMessagePromptTemplate(
             prompt=PromptTemplate(
             input_variables=[], # No input variables for the system message
-            template=sys_prompt # Use your new text blob here
+            template=sys_prompt_search_agent # Use your new text blob here
             )
         ),
-        MessagesPlaceholder(variable_name='chat_history', optional=True), # Include chat history if available
+        #MessagesPlaceholder(variable_name='chat_history', optional=True), # Include chat history if available
         HumanMessagePromptTemplate(
             prompt=PromptTemplate(
                 input_variables=['input'], # Assuming 'input' is the variable for the human message
                 template='{input}' # Use the 'input' variable as the template directly
             )
         ),
-        MessagesPlaceholder(variable_name='agent_scratchpad') # Include agent scratchpad messages if available
+        MessagesPlaceholder(variable_name='agent_scratchpad'), # Include agent scratchpad messages if available
     ]
 )
 
-# Choose the LLM that will drive the agent
-# Only certain models support this
-llm = ChatOpenAI(model="o1-preview", temperature=0)
+sys_prompt_key_insights = f"""
+You are an expert in identifying disruptive innovation opportunities for 
+{user_input.get('corporate', 'a company')} in the {user_input.get('industry', 'industry')} industry
+based on market dynamics analysis reports. 
 
-# Construct the OpenAI Tools agent
-agent = create_openai_tools_agent(llm, tools, prompt)
+Here are some additional points to consider for the company:
+{'The company overview is as follows: ' + user_input.get("company_overview") if user_input.get("company_overview") else ''}
+{'They compete with the following competitors: ' + user_input.get("competitors") if user_input.get("competitors") else ''}
+{'They operate primarily in: ' + user_input.get("geographic_focus") if user_input.get("geographic_focus") else ''}
+{'Their customer base is: ' + user_input.get("customer_base") if user_input.get("customer_base") else ''}
+{'Their business model includes: ' + user_input.get("business_model") if user_input.get("business_model") else ''}
+{'They are currently facing these key challenges: ' + user_input.get("key_challenges") if user_input.get("key_challenges") else ''}
+{'Recent developments or news about the company include: ' + user_input.get("recent_news") if user_input.get("recent_news") else ''}
+{'The company is considering the following rough idea: ' + user_input.get("rough_idea") if user_input.get("rough_idea") else ''}
+{'Additional insights include: ' + user_input.get("additional_insights") if user_input.get("additional_insights") else ''}
 
-# Create an agent executor by passing in the agent and tools
-agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+Given the market dynamics analysis report and the additional points, identify opportunities in the
+following JSON format: 
 
-# Sidebar navigation
-app_mode = st.sidebar.selectbox('Choose the app mode', ['Dashboard', 'Due Diligence', 'Ideation', 'Admin'])
+{{
+  "market_analysis": {{
+    "consumer_behavior": {{
+      "key_trends": [
+        "Trend 1",
+        "Trend 2"
+      ],
+      "gaps_in_market": [
+        "Gap 1",
+        "Gap 2"
+      ],
+      "unmet_needs": [
+        "Unmet Need 1",
+        "Unmet Need 2"
+      ],
+      "underserved_segments": [
+        "Segment 1",
+        "Segment 2"
+      ],
+      "industry_state": {{
+        "before": "Describe how consumer behavior was shaped by key trends, unmet needs, underserved segments, and market gaps in the past. Include what consumers valued before current trends emerged.",
+        "current": "Explain how consumer behavior is currently evolving, taking into account key trends, unmet needs, underserved segments, and market gaps. Highlight what consumers value today.",
+        "future": "Forecast how consumer behavior will evolve when current key trends become dominant, addressing how unmet needs and underserved segments will shift in the future. This should be based on the identified trends, gaps, and needs.",
+        "innovation": "Identify the innovation that the company should pursue to meet the future state of consumer behavior. Justify this innovation based on the current gaps, unmet needs, and trends in the market."
+      }},
+      "statistics": [
+        "Extract and clearly state (in points) all statistics related to consumer behaviour in the market dynamics analysis report. Do not miss a single statistic",
+      ]
+    }},
+    "economic_conditions": {{
+      "key_trends": [
+        "Trend 1",
+        "Trend 2"
+      ],
+      "gaps_in_market": [
+        "Gap 1",
+        "Gap 2"
+      ],
+      "unmet_needs": [
+        "Unmet Need 1",
+        "Unmet Need 2"
+      ],
+      "underserved_segments": [
+        "Segment 1",
+        "Segment 2"
+      ],
+      "industry_state": {{
+        "before": "Describe the economic conditions that influenced the market in the past, focusing on how key trends, unmet needs, underserved segments, and market gaps were addressed or not.",
+        "current": "Explain the current economic conditions and their impact on the industry, emphasizing how they align with key trends, gaps, and unmet needs in the market.",
+        "future": "Forecast future economic conditions and how they will shape the industry, highlighting the expected dominance of current trends and how unmet needs and underserved segments will evolve.",
+        "innovation": "Identify the economic-focused innovation the company should adopt, based on the forecasted future conditions and unmet needs. Justify why this innovation aligns with future economic trends and addresses market gaps."
+      }},
+      "statistics": [
+        "Extract and clearly state (in points) all statistics related to economic conditions in the market dynamics analysis report. Do not miss a single statistic",
+      ]
+    }},
+    "technological_advances": {{
+      "key_trends": [
+        "Trend 1",
+        "Trend 2"
+      ],
+      "gaps_in_market": [
+        "Gap 1",
+        "Gap 2"
+      ],
+      "unmet_needs": [
+        "Unmet Need 1",
+        "Unmet Need 2"
+      ],
+      "underserved_segments": [
+        "Segment 1",
+        "Segment 2"
+      ],
+      "industry_state": {{
+        "before": "Describe how the industry operated before the current technological trends emerged, addressing how unmet needs, underserved segments, and gaps in the market were impacted by prior technology levels.",
+        "current": "Explain how technological advancements are currently shaping the industry, emphasizing key trends, unmet needs, underserved segments, and gaps in the market.",
+        "future": "Forecast how technological advancements will dominate the industry and address unmet needs, underserved segments, and gaps. Base this forecast on current key trends becoming the standard in the future.",
+        "innovation": "Identify the technological innovation that the company should pursue, based on the forecasted future state of technology. Justify this innovation based on current gaps, unmet needs, and trends in technological advancements."
+      }},
+      "statistics": [
+        "Extract and clearly state (in points) all statistics related to technological advancements in the market dynamics analysis report. Do not miss a single statistic",
+      ]
+    }},
+    "competitive_landscape": {{
+      "key_trends": [
+        "Trend 1",
+        "Trend 2"
+      ],
+      "gaps_in_market": [
+        "Gap 1",
+        "Gap 2"
+      ],
+      "unmet_needs": [
+        "Unmet Need 1",
+        "Unmet Need 2"
+      ],
+      "underserved_segments": [
+        "Segment 1",
+        "Segment 2"
+      ],
+      "industry_state": {{
+        "before": "Describe how the competitive landscape looked before the current trends took hold, particularly in relation to unmet needs, underserved segments, and gaps in the market.",
+        "current": "Explain how the competitive landscape is evolving, focusing on key trends, unmet needs, underserved segments, and gaps in the market today.",
+        "future": "Forecast how the competitive landscape will shift in the future, with key trends becoming dominant and how that will impact unmet needs, underserved segments, and gaps.",
+        "innovation": "Identify the innovation that the company should focus on to gain a competitive advantage, based on the forecasted future landscape. Justify how this innovation addresses current market gaps and unmet needs."
+      }},
+      "statistics": [
+        "Extract and clearly state (in points) all statistics related to competitive landscape in the market dynamics analysis report. Do not miss a single statistic",
+      ]
+    }},
+    "regulatory_environment": {{
+      "key_trends": [
+        "Trend 1",
+        "Trend 2"
+      ],
+      "gaps_in_market": [
+        "Gap 1",
+        "Gap 2"
+      ],
+      "unmet_needs": [
+        "Unmet Need 1",
+        "Unmet Need 2"
+      ],
+      "underserved_segments": [
+        "Segment 1",
+        "Segment 2"
+      ],
+      "industry_state": {{
+        "before": "Describe how regulations shaped the industry before the current trends, and how unmet needs, underserved segments, and market gaps were addressed by previous regulatory conditions.",
+        "current": "Explain the current regulatory environment, emphasizing how it is responding to key trends, unmet needs, underserved segments, and gaps in the market.",
+        "future": "Forecast how regulations will change in the future and how they will impact key trends, unmet needs, underserved segments, and market gaps.",
+        "innovation": "Identify the regulatory-focused innovation the company should pursue, based on future regulatory changes. Justify why this innovation will align with future regulations and address current gaps in the market."
+      }},
+      "statistics": [
+        "Extract and clearly state (in points) all statistics related to regulatory environment in the market dynamics analysis report. Do not miss a single statistic",
+      ]
+    }}
+  }}
+}}
 
-import streamlit as st    
+Strictly stick to this JSON format and do not reply anything else. 
+"""
 
-# Assume this section is part of a larger application where app_mode is defined
-if app_mode == "Dashboard":
-    st.title("Welcome!")
+def pitch_idea(idea_expander, data):
+  with idea_expander:
+      # Story - Past Character
+      st.subheader("1. Story-Based Characters")
+      st.markdown("### Past Character")
+      st.info(f"**Description:** {data['big_picture_innovation']['story']['past_character']['description']}")
+      st.markdown(f"**Use Case:** {data['big_picture_innovation']['story']['past_character']['use_case']}")
+      st.markdown(f"**Story:** {data['big_picture_innovation']['story']['past_character']['simple_story']}")
+      
+      # Story - Current Character
+      st.markdown("### Current Character")
+      st.info(f"**Description:** {data['big_picture_innovation']['story']['current_character']['description']}")
+      st.markdown(f"**Use Case:** {data['big_picture_innovation']['story']['current_character']['use_case']}")
+      st.markdown(f"**Story:** {data['big_picture_innovation']['story']['current_character']['simple_story']}")
+      
+      # Story - Future Character
+      st.markdown("### Future Character")
+      st.info(f"**Description:** {data['big_picture_innovation']['story']['future_character']['description']}")
+      st.markdown(f"**Use Case:** {data['big_picture_innovation']['story']['future_character']['use_case']}")
+      st.markdown(f"**Story:** {data['big_picture_innovation']['story']['future_character']['simple_story']}")
+      
+      # Future Product
+      st.markdown("### Future Product")
+      st.success(f"**Description:** {data['big_picture_innovation']['story']['future_product']['description']}")
+      
+      # Innovation Plan
+      st.header("Innovation Plan")
 
-    # Displaying user information
-    col1, col2 = st.columns(2)
+      # Existing Solution
+      st.subheader("2. Existing Solution")
+      st.info(f"**Current Solution:** {data['innovation_plan']['existing_solution']['description']}")
+      
+      # Most Crucial Change
+      st.subheader("3. Most Crucial Change")
+      st.warning(f"**One Key Change:** {data['innovation_plan']['most_crucial_change']['description']}")
+      
+      # Justification
+      st.markdown(f"**Justification:** {data['innovation_plan']['justification']['description']}")
+      
+      # MVP, POC, GTM
+      st.header("MVP, POC, and Go-To-Market Strategy")
 
-    with col1:
-        st.header("Account Details")
-        st.write("Institution: National University of Singapore")
-        st.write("Department: EMBA")
+      # Leap of Faith Assumption
+      st.subheader("4. Leap of Faith Assumption")
+      st.info(f"**Assumption:** {data['mvp_poc_gtm']['leap_of_faith_assumption']['description']}")
+      
+      # MVP Section
+      st.subheader("5. Minimum Viable Product (MVP)")
+      st.success(f"**MVP Description:** {data['mvp_poc_gtm']['mvp']['description']}")
+      st.markdown("### Key Features")
+      for feature in data['mvp_poc_gtm']['mvp']['key_features']:
+          st.markdown(f"- {feature}")
+      st.markdown(f"**Success Criteria:** {data['mvp_poc_gtm']['mvp']['success_criteria']}")
+      
+      # POC Section
+      st.subheader("6. Proof of Concept (POC)")
+      st.success(f"**POC Description:** {data['mvp_poc_gtm']['poc']['description']}")
+      st.markdown("### Validation Goals")
+      for goal in data['mvp_poc_gtm']['poc']['validation_goals']:
+          st.markdown(f"- {goal}")
+      st.markdown("### Potential Obstacles")
+      for obstacle in data['mvp_poc_gtm']['poc']['potential_obstacles']:
+          st.markdown(f"- {obstacle}")
+      
+      # Beachhead Market
+      st.subheader("7. Beachhead Market")
+      st.info(f"**Description:** {data['mvp_poc_gtm']['beachhead_market']['description']}")
+      st.markdown("### Market Characteristics")
+      for characteristic in data['mvp_poc_gtm']['beachhead_market']['market_characteristics']:
+          st.markdown(f"- {characteristic}")
+      st.markdown("### Key Assumptions")
+      for assumption in data['mvp_poc_gtm']['beachhead_market']['key_assumptions']:
+          st.markdown(f"- {assumption}")
+      
+      # Go-To-Market Strategy
+      st.subheader("8. Go-To-Market (GTM) Strategy")
+      st.success(f"**GTM Strategy:** {data['mvp_poc_gtm']['gtm_strategy']['strategy']}")
+      st.markdown("### Tests and Targets")
+      for test in data['mvp_poc_gtm']['gtm_strategy']['tests_and_targets']['tests']:
+          st.markdown(f"- Test: {test}")
+      for target in data['mvp_poc_gtm']['gtm_strategy']['tests_and_targets']['targets']:
+          st.markdown(f"- Target: {target}")
+      st.markdown(f"**Cost:** {data['mvp_poc_gtm']['gtm_strategy']['cost']}")
+      st.markdown(f"**Timeline:** {data['mvp_poc_gtm']['gtm_strategy']['timeline']}")
+      
+      # Financial Projections
+      st.header("Financial Projections")
+      st.markdown("### Projection Methodology")
+      st.success(f"**Methodology:** {data['financial_projections']['projection_methodology']}")
+      
+      st.markdown("### Revenue Growth Projections")
+      st.markdown(f"**Year 1:** {data['financial_projections']['estimated_revenue_growth']['year_1']['revenue']} "
+                  f"({data['financial_projections']['estimated_revenue_growth']['year_1']['reasoning']})")
+      st.markdown(f"**Year 2:** {data['financial_projections']['estimated_revenue_growth']['year_2']['revenue']} "
+                  f"({data['financial_projections']['estimated_revenue_growth']['year_2']['reasoning']})")
+      st.markdown(f"**Year 3:** {data['financial_projections']['estimated_revenue_growth']['year_3']['revenue']} "
+                  f"({data['financial_projections']['estimated_revenue_growth']['year_3']['reasoning']})")
+      
+      st.markdown("### Profit Margins")
+      st.markdown(f"**Year 1:** {data['financial_projections']['profit_margins']['year_1']}")
+      st.markdown(f"**Year 2:** {data['financial_projections']['profit_margins']['year_2']}")
+      st.markdown(f"**Year 3:** {data['financial_projections']['profit_margins']['year_3']}")
+      
+      st.markdown("### Break-Even Analysis")
+      st.markdown(f"**Break-Even Timeline:** {data['financial_projections']['break_even_analysis']['break_even_timeline']}")
+      st.markdown(f"**Conditions for Break-Even:** {data['financial_projections']['break_even_analysis']['conditions']}")
 
-    with col2:
-        st.header("Accessible Tools")
-        st.info('Due Diligence 📊')
-        st.info('Ideation')
+if 'user_input' in st.session_state:
+    # Define the interaction for invoking the model with updated prompts
+    messages = [
+        SystemMessage(content=sys_prompt_market_analysis),
+        HumanMessage(content=user_input.get('corporate', 'Give me search queries')),
+    ]
 
-elif app_mode == "Due Diligence":
+    result = model.invoke(messages)
+    answer = parser.invoke(result)
 
-    REPORT_PROMPT = "Create the due diligence report. In your report include the following sections\nReport: The information you have gathered from the user in string format. Present it with the relevant subsections.\nFeedback: Feedback to the team based on the information you gathered in string format.\nFinal Decision: Your final decision on whether this is a feasible idea worth the investment in string format."
-    st.title("Due Diligence")
+    # Create the agent executor
+    agent = create_openai_tools_agent(model, tools, prompt)
+    agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False)
+
+    market_dynamics = ""
     
-    # Define a list of companies for selection.
-    #company_list = ['Greenfield', 'Google', 'Apple', 'Meta', 'Amazon', 'Microsoft']
+    expand_it = True
+    expanders = {}
+    for category in ["Consumer Behavior", "Economic Conditions", "Technological Advances", "Competitive Landscape", "Regulatory Environment"]:
+        # Create an expander for each category and store in a dictionary
+        expanders[category] = st.expander(f"Category: {category}", expanded=expand_it)
+        expand_it = False
 
-    # Capture the selected company each time the user selects from the dropdown.
-    #selected_company = st.selectbox("Which company do you want the bot to represent?", company_list)    
-
-    if "openai_model" not in st.session_state:
-        st.session_state["openai_model"] = "o1-preview"
-
-    if "dmessages" not in st.session_state:
-        st.session_state.dmessages = [{"role": "user", "content": f"You are a virtual due diligence expert for the specified company. Your task is to gather detailed information about users' new business ideas without revealing the structure or sections of the report. Engage users in a conversational manner, asking one question at a time to ensure clarity. Keep your questions short and to the point. Start by asking them to describe their business opportunity and their rationale on why the company should invest in their business idea. Continue the conversation to gather information on key due diligence findings, assumptions and risks, project overview, market opportunity, strategic alignment, competitive landscape, available resources, technical and business execution feasibility, and the main investment thesis."},
-        {"role": "assistant", "content": f"Welcome to the Due Diligence Bot. I'm here to help you clearly articulate and refine your business idea. By asking targeted questions, I'll gather detailed information that can strengthen your proposal. This ensures all aspects of your idea are thoroughly considered, making it more compelling for potential investors. Before we start, please specify the corporate and the innovation."}]
+    # First loop to show "Collating insights" inside the expander for each category
+    for category in ["Consumer Behavior", "Economic Conditions", "Technological Advances", "Competitive Landscape", "Regulatory Environment"]:
+        with expanders[category]:
+            st.warning(f"Collating insights on '{category}'")
     
-    for message in st.session_state.dmessages:
-        if message["role"] != "system" and message["content"] != REPORT_PROMPT:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
-
-    if len(st.session_state.dmessages) >= 19:
-        st.info("You can now generate the due diligence report.")
-        if st.button("Generate Report"):
-            st.session_state.dmessages.append({"role": "user", "content": REPORT_PROMPT})
-            with st.chat_message("assistant"):
-                stream = client.chat.completions.create(
-                    model=st.session_state["openai_model"],
-                    messages=[
-                        {"role": m["role"], "content": m["content"]}
-                        for m in st.session_state.dmessages
-                    ],
-                    stream=False,
-                )
-                response = st.write_stream(stream)
-            st.session_state.dmessages.append({"role": "assistant", "content": response})
+    report_expander = st.expander(f"Identified Areas of Innovation", expanded=False)
+    with report_expander:
+      st.warning(f"Key Insights Report")
     
-    elif len(st.session_state.dmessages) != 1:
-        st.info(f"I will ask {int((19-len(st.session_state.dmessages))/2)} more questions before generating the report.")
-
-    if prompt := st.chat_input("Write your message..."):
-        st.session_state.dmessages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
-
-        with st.chat_message("assistant"):
-            stream = client.chat.completions.create(
-                model=st.session_state["openai_model"],
-                messages=[
-                    {"role": m["role"], "content": m["content"]}
-                    for m in st.session_state.dmessages
-                ],
-                stream=False,
-            )
-            response = st.write(stream.choices[0].message.content)
-        st.session_state.dmessages.append({"role": "assistant", "content": response})
-
-elif app_mode == "Admin":
-    init_firebase()
-    if 'logged_in' not in st.session_state:
-        st.session_state['logged_in'] = False  # Initialize session state
+    idea_expander = st.expander(f"Proposed Innovation By O1-Preview [Powerful Model]", expanded=False)
+    with idea_expander:
+      st.warning(f"Innovation Pitch Deck (O1-Preview)")
     
-    if st.session_state['logged_in']:
-        main_view()  # Display the main view if logged in
-    else:
-        st.title("Nuggt Admin Login")
-        login_form()  # Display the login form if not logged in
-
-elif app_mode == "Ideation":
-    st.title("Ideation chat")
-
-    if "imessages" not in st.session_state:
-        introduction = """Welcome to the Market Dynamics Analysis Tool. Let’s identify impactful areas for innovation by analyzing different market factors related to DCM Shriram. We will  focus on DCM Shriram today. Please specify which area of market dynamics would you like to explore first? Here are your options:
-
-        1. Consumer Behavior
-        2. Economic Conditions
-        3. Technological Advances
-        4. Competitive Landscape
-        5. Regulatory Environment
-        """
-        st.session_state.imessages = [HumanMessage(content="introduce yourself"), AIMessage(content=introduction)]
-        
-    if "ihistory" not in st.session_state:
-        introduction = "Welcome to the Market Dynamics Analysis Tool. Let’s identify impactful areas for innovation by analyzing different market factors related to a selected company. Please specify a company we should focus on today together with which area of market dynamics would you like to explore first? Here are your options:\n1. Consumer Behavior\n2. Economic Conditions\n3. Technological Advances\n4. Competitive Landscape\n5. Regulatory Environment"
-        st.session_state.ihistory = [{"role": "assistant", "content": introduction}]
+    idea_standard = st.expander(f"Proposed Innovation By GPT-4o [Standard Model]", expanded=False)
+    with idea_standard:
+      st.warning(f"Innovation Pitch Deck (GPT-4o)")
     
-    if "session" not in st.session_state:
-        st.session_state.session = start_new_session()
-
-    for message in st.session_state.ihistory:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+    idea_simple = st.expander(f"Proposed Innovation By GPT-4o-mini [Simple Model]", expanded=False)
+    with idea_simple:
+      st.warning(f"Innovation Pitch Deck (GPT-4o-mini)")
     
-    # React to user input
-    if prompt := st.chat_input("What is up?"):
-        # Display user message in chat message container
-        st.chat_message("user").markdown(prompt)
-        st.session_state.imessages.append(HumanMessage(content=prompt))
-        st.session_state.ihistory.append({"role": "user", "content": prompt})
-        upload_conversation_to_firebase(st.session_state.session, {"role": "user", "message": prompt})
+    # Second loop to populate the expanders with the content
+    for category, searches in answer['searches'].items():
+        market_dynamics += f"\n{category}"
+        output_list = ""
+        with expanders[category]:
+            for search in searches:
+                # Create a placeholder for the loader
+                loader_placeholder = st.empty()
 
-        with st.spinner('Thinking...'):
-            response = agent_executor.invoke({"input": prompt, "chat_history": st.session_state.imessages})["output"]
-       
-        with st.chat_message("assistant"):
-            st.write(response)
-        st.session_state.imessages.append(AIMessage(content=response))
-        st.session_state.ihistory.append({"role": "assistant", "content": response})
-        upload_conversation_to_firebase(st.session_state.session, {"role": "assistant", "message": response})
-        
+                # Simulate a loading message with a spinner
+                loader_placeholder.info(f"Researching on: {search['search']} ⏳")
+
+                # Invoke the agent to get the output for the search
+                output = agent_executor.invoke({"input": search['search']})["output"]
+
+                # Replace the loader with a success message (tick emoji)
+                loader_placeholder.info(search['search'])
+
+                st.success(output)
+
+                output_list = output_list + "\n" + output
+
+                # Update market_dynamics with the output
+                market_dynamics += f"\n{search['search']}\n{output}"
+                
     
+    messages = [
+        SystemMessage(content=sys_prompt_key_insights),
+        HumanMessage(content=f"Marketing Dynamics Analysis:\n{market_dynamics}"),
+    ]
+
+    result = model.invoke(messages)
+    data = parser.invoke(result)
+
+    market_dynamics = str(data)
+
+    for key, value in data["market_analysis"].items():
+      # Create an expander for each section
+      with report_expander:
+          # Key Trends, Gaps, Unmet Needs, Underserved Segments side by side in columns
+          col1, col2, col3, col4 = st.columns(4)
+          
+          st.warning(f'## {key.replace("_", " ")} insights')
+          # Key Trends
+          with col1:
+            st.info("### Key Trends")
+            for trend in value["key_trends"]:
+                st.write(f"- {trend}")
+
+          # Gaps in Market
+          with col2:
+            st.warning("### Gaps in Market")
+            for gap in value["gaps_in_market"]:
+                st.write(f"- {gap}")
+
+          # Unmet Needs
+          with col3:
+            st.success("### Unmet Needs")
+            for need in value["unmet_needs"]:
+                st.write(f"- {need}")
+
+          # Underserved Segments
+          with col4:
+            st.info("### Underserved Segments")
+            for segment in value["underserved_segments"]:
+                st.write(f"- {segment}")
+
+          # Industry State: Before, Current, Future, Innovation (spanning all columns)
+          st.write("### Industry State")
+          st.warning(f"**Before:** {value['industry_state']['before']}")
+          st.info(f"**Current:** {value['industry_state']['current']}")
+          st.success(f"**Future:** {value['industry_state']['future']}")
+          st.success(f"**Innovation:** {value['industry_state']['innovation']}")
+
+          st.write("### Key Statistics")
+          for point in value["statistics"]:
+            st.write(f"- {point}")
+          
+          st.markdown("---")
+    
+    sys_final_innovation = f"""
+    You are an expert in coming up with practical MVP solutions to test leap of
+    faith assumptions extracted from the market dynamics analysis report for {user_input.get('corporate', 'a company')} 
+    in the {user_input.get('industry', 'industry')} industry. Use the provided statistics to make your points. Your answer must have
+    statistics to back your assumptions. 
+    
+    Here are some additional things to consider:
+    {'The company overview is as follows: ' + user_input.get("company_overview") if user_input.get("company_overview") else ''}
+    {'They compete with the following competitors: ' + user_input.get("competitors") if user_input.get("competitors") else ''}
+    {'They operate primarily in: ' + user_input.get("geographic_focus") if user_input.get("geographic_focus") else ''}
+    {'Their customer base is: ' + user_input.get("customer_base") if user_input.get("customer_base") else ''}
+    {'Their business model includes: ' + user_input.get("business_model") if user_input.get("business_model") else ''}
+    {'They are currently facing these key challenges: ' + user_input.get("key_challenges") if user_input.get("key_challenges") else ''}
+    {'Recent developments or news about the company include: ' + user_input.get("recent_news") if user_input.get("recent_news") else ''}
+    {'The company is considering the following rough idea: ' + user_input.get("rough_idea") if user_input.get("rough_idea") else ''}
+    {'Additional insights include: ' + user_input.get("additional_insights") if user_input.get("additional_insights") else ''}
+
+    
+    From a given market analysis insight and the additional points, you design the validation experiment in the following
+    JSON format:
+
+    {{
+      "Overview": "Short description of the innovation",
+      "big_picture_innovation": {{
+        "story": {{
+          "past_character": {{
+            "description": "Describe the character from the past, how they used the product, and how it aligned with the trends, unmet needs, and gaps in the market during that time.",
+            "use_case": "How this character used the product, focusing on past market trends and gaps in the market.",
+            "simple_story": "Based on the description and usecase give this character a name and persona and write a simple 4-5 line paragraph describing how he or she used the product."
+          }},
+          "current_character": {{
+            "description": "Describe the current user, what key trends, unmet needs, and gaps are shaping their usage today.",
+            "use_case": "How the current user is using the product to meet their present needs and how it serves them based on today’s market dynamics.",
+            "simple_story": "Based on the description and usecase give this character a name and persona and write a simple 4-5 line paragraph describing how he or she using the product."
+          }},
+          "future_character": {{
+            "description": "Describe the future character, their needs, the future key trends, and gaps in the market that will affect their usage.",
+            "use_case": "How this character in the future will use the ideal product to meet their future needs based on forecasted trends and market gaps.",
+            "simple_story": "Based on the description and usecase give this character a name and persona and write a simple 4-5 line paragraph describing how he or she will use the product."
+          }},
+          "future_product": {{
+            "description": "Define the ideal product that can meet the demands of the future character. How this product solves future unmet needs, addresses future gaps, and capitalizes on future market trends."
+          }}
+        }}
+      }},
+      "innovation_plan": {{
+        "existing_solution": {{
+          "description": "Define the existing solution as it is today, explaining how it meets the current market needs."
+        }},
+        "most_crucial_change": {{
+          "description": "State the one most crucial change that needs to be made to the current product. This change should address an unmet need of today’s users and be a step toward the future ideal product described earlier. This change must be technically feasible and testable."
+        }},
+        "justification": {{
+          "description": "Explain why this change is the most crucial, how it serves current users better, and how it is a step toward the future product based on trends, gaps, and unmet needs."
+        }}
+      }},
+      "mvp_poc_gtm": {{
+        "leap_of_faith_assumption": {{
+          "description": "Define the leap of faith assumption based on the one crucial change. This should be a core hypothesis that, if proven, will validate that the chosen change will move the product toward the ideal future state."
+        }},
+        "mvp": {{
+          "description": "Describe the Minimum Viable Product (MVP) designed to test the leap of faith assumption. This should offer only the core value proposition of the crucial change with minimal features. Give a practical MVP that can be easily build by clearly laying out the core features",
+          "key_features": [
+            "Core feature 1",
+            "Core feature 2"
+          ],
+          "success_criteria": "Metrics or benchmarks that will determine if the MVP is successful (e.g., X number of users, Y amount of revenue)."
+        }},
+        "poc": {{
+          "description": "Description of the Proof of Concept (POC) to validate the feasibility of the MVP. The POC should aim to prove that the innovation can work from a technical and business standpoint.",
+          "validation_goals": [
+            "Technical feasibility goal",
+            "Business validation goal"
+          ],
+          "potential_obstacles": [
+            "Technical challenge 1",
+            "Market adoption challenge 2"
+          ]
+        }},
+        "beachhead_market": {{
+          "description": "Identification of the beachhead market for initial testing. This market should be small enough to control costs but large enough to provide meaningful insights for scaling.",
+          "market_characteristics": [
+            "Characteristic 1 (e.g., specific demographic or geographic area)",
+            "Characteristic 2 (e.g., industry vertical or early adopters)"
+          ],
+          "key_assumptions": [
+            "Assumption 1 about the market",
+            "Assumption 2 about customer behavior"
+          ]
+        }},
+        "gtm_strategy": {{
+          "strategy": "High-level Go-To-Market (GTM) strategy for the beachhead market, including marketing, sales, and distribution plans.",
+          "tests_and_targets": {{
+            "tests": [
+              "Test 1: Hypothesis that will be validated (e.g., customer willingness to pay)",
+              "Test 2: Hypothesis related to product performance"
+            ],
+            "targets": [
+              "Target 1: Key metric (e.g., number of beta users)",
+              "Target 2: Key result (e.g., minimum viable revenue)"
+            ]
+          }},
+          "cost": "Estimated cost for the validation and testing process (e.g., $X for product development, $Y for marketing).",
+          "timeline": "Estimated timeline for the validation process, including milestones for MVP launch, POC, and GTM phases."
+        }}
+      }},
+      "financial_projections": {{
+        "projection_methodology": "Define the financial projection methodology used, based on lean startup assumptions, market potential, and estimated cost structures.",
+        "estimated_revenue_growth": {{
+          "year_1": {{
+            "revenue": "$X",
+            "reasoning": "Explanation for how Year 1 revenue is estimated based on market size and MVP success."
+          }},
+          "year_2": {{
+            "revenue": "$Y",
+            "reasoning": "Reasoning behind Year 2 revenue growth based on market expansion, product adoption, and scaling efforts."
+          }},
+          "year_3": {{
+            "revenue": "$Z",
+            "reasoning": "Projections for Year 3 based on product improvements, market penetration, and customer retention."
+          }}
+        }},
+        "profit_margins": {{
+          "year_1": "Estimated profit margin in Year 1, with a justification based on early-stage product costs.",
+          "year_2": "Expected profit margin for Year 2, considering market adoption and scaling.",
+          "year_3": "Profit margin for Year 3, as the product reaches more maturity and efficiency in cost structure."
+        }},
+        "break_even_analysis": {{
+          "break_even_timeline": "Estimated timeline for reaching the break-even point.",
+          "conditions": "Conditions necessary for the break-even point to be achieved (e.g., revenue target, cost reductions, market growth)."
+        }}
+      }}
+    }}
+
+    Strictly stick to this JSON format and do not reply anything else. 
+    """
+
+    messages = [
+        #SystemMessage(content=sys_final_innovation),
+        HumanMessage(content=f"{sys_final_innovation}\n\nMarketing Dynamics Analysis:\n{market_dynamics}\n\nRemember to make use of statistics to make your case."),
+    ]
+    model = ChatOpenAI(model="o1-preview", temperature=1)
+    result = model.invoke(messages)
+    data = parser.invoke(result)
+    pitch_idea(idea_expander, data)
+    idea_1 = data["Overview"]
+    messages = [
+        SystemMessage(content=sys_final_innovation),
+        HumanMessage(content=f"Marketing Dynamics Analysis:\n{market_dynamics}\n\nCome up with an idea that is different from {idea_1}"),
+    ]
+    model = ChatOpenAI(model="gpt-4o", temperature=0)
+    result = model.invoke(messages)
+    data = parser.invoke(result)
+    pitch_idea(idea_standard, data)
+    idea_2 = data["Overview"]
+    messages = [
+        SystemMessage(content=sys_final_innovation),
+        HumanMessage(content=f"Marketing Dynamics Analysis:\n{market_dynamics}\n\nCome up with an idea that is different from {idea_1} and from {idea_2}"),
+    ]
+    model = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    result = model.invoke(messages)
+    data = parser.invoke(result)
+    pitch_idea(idea_simple, data)
+
+else:
+  default_instructions = """
+# **Welcome to the Innovation Pitch Deck Generator**
+
+### **Step-by-Step Instructions**
+
+### **1. Provide Input in the Sidebar:**
+
+- **Company (required):** Enter the name of the company you’re working with.  
+  **Example:** `Amazon`
+
+- **Industry (required):** Specify the industry you want to innovate in.  
+  **Example:** `E-commerce, Cloud Services`
+
+- **Company Overview (optional):** Briefly describe the company.  
+  **Example:** `Online retail giant offering a wide range of products and services.`
+
+- **Competitors (optional):** List key competitors. Multiple competitors can be entered, separated by commas.  
+  **Example:** `Walmart, eBay, Alibaba`
+
+- **Geographic Focus (optional):** Specify the regions or countries where the company operates.  
+  **Example:** `Global, with focus in North America and Europe`
+
+- **Customer Base (optional):** Describe the company's customer base.  
+  **Example:** `B2C, Millennial shoppers, high-income urban professionals`
+
+- **Recent News (optional):** Mention any recent developments or news.  
+  **Example:** `Launched new AI-powered shopping tools, Acquired Zoox`
+
+- **Key Challenges (optional):** Describe current challenges the company faces.  
+  **Example:** `Supply chain disruptions, Increased competition in delivery services`
+
+- **Business Model (optional):** Explain how the company generates revenue.  
+  **Example:** `Marketplace commissions, Subscription services (Amazon Prime), Advertising`
+
+- **Rough Idea (optional):** Share any rough innovation idea you may have in mind.  
+  **Example:** `Expanding into grocery delivery using drones`
+
+- **Additional Insights (optional):** Provide any other useful insights or information.
+
+  > **Note:** You can input multiple values separated by commas for all fields other than the Company name.
+
+---
+
+### **2. Click ‘Create Innovation Pitch’:**
+
+After entering the required and optional fields, click the button to generate your customized pitch deck.
+
+---
+
+### **3. Categories of Research:**
+
+After clicking the button, the system will research and gather insights based on five key categories:
+- **Consumer Behavior**
+- **Economic Conditions**
+- **Technological Advances**
+- **Competitive Landscape**
+- **Regulatory Environment**
+
+---
+
+### **4. Market Insight Report:**
+
+The tool will generate a **Market Insight Report** covering:
+- **Key Trends:** Major trends shaping the market.
+- **Gaps in the Market:** Unfulfilled needs or inefficiencies.
+- **Unmet Needs:** Specific needs that are not currently being addressed.
+- **Underserved Segments:** Market segments that are not receiving adequate attention.
+- **Industry State:** A historical, current, and future analysis of the industry, including suggested innovations for future challenges.
+
+---
+
+### **5. Innovation Pitch:**
+
+The final section will generate an **Innovation Pitch**, which includes:
+- **Past, Current, and Future Character Stories:** Illustrates how users from the past, present, and future interact with the product or service, showing how market trends and gaps impact them.
+- **Ideal Future Product:** A description of the future product that meets the needs of future users based on identified trends and gaps.
+- **Innovation Plan:** Outlines the current solution and identifies the most crucial change required to meet market demands.
+- **MVP, POC, and Go-To-Market Strategy:** A detailed plan to create a Minimum Viable Product (MVP) for testing the core innovation, followed by a Proof of Concept (POC) and initial Go-To-Market strategy. This includes:
+  - **Leap of Faith Assumption:** A core assumption that will be tested through the MVP.
+  - **Market Characteristics:** Target market (beachhead market) for testing.
+  - **Tests, Targets, and Timeline:** Specific metrics for validating the innovation, cost estimates, and timelines.
+- **Financial Projections:** Financial forecasts including revenue growth, profit margins, and break-even analysis.
+
+---
+
+### **6. Pitch Deck Models:**
+
+You will receive **three pitch decks**:
+- **o1-preview (most powerful model):** Provides in-depth insights.
+- **gpt-4o (standard model):** Offers detailed insights with practical considerations.
+- **gpt-4o-mini (simpler model):** Generates concise reports for quick insights.
+
+---
+
+Use this tool to explore innovation opportunities, create MVPs, and propose data-backed strategies aligned with your business goals and the future industry trends.
+"""
+
+  st.markdown(default_instructions)
+
+
+
+
+
+
