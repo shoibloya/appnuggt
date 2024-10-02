@@ -1,11 +1,7 @@
 openai
-Pillow  
-langchain==0.2.12 
-PyMuPDF 
+langchain 
 tiktoken
-faiss-cpu
-pandas
-firebase-admin
 langchain-openai 
 tavily-python
 langchain-community
+langchain-core
