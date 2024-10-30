@@ -25,7 +25,7 @@ st.set_page_config(page_title="Nuggt Dashboard", layout="wide")
 
 # Sidebar to take user input
 with st.sidebar:
-    corporate = st.text_input("Corporate (e.g. Amazon)", "Amazon")
+    corporate = st.text_input("Corporate (e.g. Amazon), Please put 'Greenfield Entrepreneurship' otherwise.", "Amazon")
     industry = st.text_input("Industry", "E-commerce")
     company_overview = st.text_area("Company Overview (What does the company do?)", "")
     competitors = st.text_area("Competitors (Who are the key competitors?)", "")
