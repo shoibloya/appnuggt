@@ -4,7 +4,7 @@ import streamlit as st
 st.title("Welcome to nuggt")
 
 # Add a professional header and description
-st.header("Choose an application to get started:")
+st.header("Choose an application from the side panel to get started:")
 
 # Add options with descriptions
 st.subheader("Due Diligence")
