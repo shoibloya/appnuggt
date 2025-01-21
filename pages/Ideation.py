@@ -787,7 +787,7 @@ if 'user_input' in st.session_state:
     
 else:
   default_instructions = """
-# **Welcome to the Innovation Pitch Deck Generator**
+# **Welcome to the Market Dynamics Report Generator to Validate Startup Ideas and Identify Opportunities**
 
 ### **Step-by-Step Instructions**
 
