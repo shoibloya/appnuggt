@@ -6,7 +6,7 @@ st.title("Welcome to nuggt")
 # Add a professional header and description
 st.header("Choose an application from the side panel to get started:")
 
-st.subheader("Idea Validation")
+st.subheader("Ideation (Validate your idea)")
 st.write("Validate innovative ideas using the market dynamics framework and identify new opportunities.")
 
 # Add options with descriptions
