@@ -547,9 +547,9 @@ if 'user_input' in st.session_state:
     with idea_standard:
       st.warning(f"Innovation Pitch Deck (GPT-4o)")
         
-    idea_expander = st.expander(f"Proposed Innovation By O3-Mini [Powerful Model]", expanded=False)
+    idea_expander = st.expander(f"Proposed Innovation By gpt-4.1 [Powerful Model]", expanded=False)
     with idea_expander:
-      st.warning(f"Innovation Pitch Deck (O3-Mini)")
+      st.warning(f"Innovation Pitch Deck (gpt-4.1)")
         
     # Second loop to populate the expanders with the content
     for category, searches in answer['searches'].items():
@@ -860,7 +860,7 @@ if 'user_input' in st.session_state:
         #SystemMessage(content=sys_final_innovation),
         HumanMessage(content=f"{sys_final_innovation}\n\nMarketing Dynamics Analysis:\n{market_dynamics}\n\nRemember to make use of statistics to make your case.\n\nCome up with an idea that is different from {idea_1} and different from {idea_2}"),
     ]
-    model = ChatOpenAI(model="o3-mini", temperature=1)
+    model = ChatOpenAI(model="gpt-4.1", temperature=1)
 
     # --- SHRINK-ON-ERROR WRAP (ADDED) for o1-preview step ---
     _md_tmp = market_dynamics
@@ -972,7 +972,7 @@ The final section will generate an **Innovation Pitch**, which includes:
 ### **6. Pitch Deck Models:**
 
 You will receive **three pitch decks**:
-- **o3-mini (most powerful model):** Provides in-depth insights.
+- **gpt-4.1 (most powerful model):** Provides in-depth insights.
 - **gpt-4o (standard model):** Offers detailed insights with practical considerations.
 - **gpt-4o-mini (simpler model):** Generates concise reports for quick insights.
 
