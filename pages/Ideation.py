@@ -23,6 +23,17 @@ tools = [TavilySearchResults(max_results=3, include_answer=True, include_raw_con
 
 st.set_page_config(page_title="Nuggt Dashboard", layout="wide")
 
+# ---- helper functions for shrinking on context-length error (ADDED) ----
+def _is_ctx_len_error(err: Exception) -> bool:
+    s = str(err).lower()
+    return ("context length" in s) or ("maximum context length" in s) or ("context_length_exceeded" in s)
+
+def _shrink_to_first_third(text: str) -> str:
+    if not text:
+        return text
+    return text[:max(1, len(text) // 3)]
+# ------------------------------------------------------------------------
+
 # Sidebar to take user input
 with st.sidebar:
     corporate = st.text_input("Corporate (e.g. Amazon), Please put 'Greenfield Entrepreneurship' otherwise.", "Amazon")
@@ -571,7 +582,24 @@ if 'user_input' in st.session_state:
         HumanMessage(content=f"Marketing Dynamics Analysis:\n{market_dynamics}"),
     ]
 
-    result = model.invoke(messages)
+    # --- SHRINK-ON-ERROR WRAP (ADDED) for key insights step ---
+    _md_tmp = market_dynamics
+    while True:
+        try:
+            messages = [
+                SystemMessage(content=sys_prompt_key_insights),
+                HumanMessage(content=f"Marketing Dynamics Analysis:\n{_md_tmp}"),
+            ]
+            result = model.invoke(messages)
+            break
+        except Exception as e:
+            if _is_ctx_len_error(e):
+                _md_tmp = _shrink_to_first_third(_md_tmp)
+                continue
+            else:
+                raise
+    # ----------------------------------------------------------
+
     data = parser.invoke(result)
 
     market_dynamics = str(data)
@@ -761,7 +789,25 @@ if 'user_input' in st.session_state:
         HumanMessage(content=f"Marketing Dynamics Analysis:\n{market_dynamics}"),
     ]
     model = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-    result = model.invoke(messages)
+
+    # --- SHRINK-ON-ERROR WRAP (ADDED) for first final-innovation step ---
+    _md_tmp = market_dynamics
+    while True:
+        try:
+            messages = [
+                SystemMessage(content=sys_final_innovation),
+                HumanMessage(content=f"Marketing Dynamics Analysis:\n{_md_tmp}"),
+            ]
+            result = model.invoke(messages)
+            break
+        except Exception as e:
+            if _is_ctx_len_error(e):
+                _md_tmp = _shrink_to_first_third(_md_tmp)
+                continue
+            else:
+                raise
+    # --------------------------------------------------------------------
+
     data = parser.invoke(result)
     idea_1 = data["Overview"]
     pitch_idea(idea_simple, data)
@@ -771,7 +817,25 @@ if 'user_input' in st.session_state:
         HumanMessage(content=f"Marketing Dynamics Analysis:\n{market_dynamics}\n\nCome up with an idea that is different from {idea_1}"),
     ]
     model = ChatOpenAI(model="gpt-4o", temperature=1)
-    result = model.invoke(messages)
+
+    # --- SHRINK-ON-ERROR WRAP (ADDED) for second final-innovation step ---
+    _md_tmp = market_dynamics
+    while True:
+        try:
+            messages = [
+                SystemMessage(content=sys_final_innovation),
+                HumanMessage(content=f"Marketing Dynamics Analysis:\n{_md_tmp}\n\nCome up with an idea that is different from {idea_1}"),
+            ]
+            result = model.invoke(messages)
+            break
+        except Exception as e:
+            if _is_ctx_len_error(e):
+                _md_tmp = _shrink_to_first_third(_md_tmp)
+                continue
+            else:
+                raise
+    # ---------------------------------------------------------------------
+
     data = parser.invoke(result)
     idea_2 = data["Overview"]
     pitch_idea(idea_standard, data)
@@ -781,7 +845,25 @@ if 'user_input' in st.session_state:
         HumanMessage(content=f"{sys_final_innovation}\n\nMarketing Dynamics Analysis:\n{market_dynamics}\n\nRemember to make use of statistics to make your case.\n\nCome up with an idea that is different from {idea_1} and different from {idea_2}"),
     ]
     model = ChatOpenAI(model="o1-preview", temperature=1)
-    result = model.invoke(messages)
+
+    # --- SHRINK-ON-ERROR WRAP (ADDED) for o1-preview step ---
+    _md_tmp = market_dynamics
+    while True:
+        try:
+            messages = [
+                #SystemMessage(content=sys_final_innovation),
+                HumanMessage(content=f"{sys_final_innovation}\n\nMarketing Dynamics Analysis:\n{_md_tmp}\n\nRemember to make use of statistics to make your case.\n\nCome up with an idea that is different from {idea_1} and different from {idea_2}"),
+            ]
+            result = model.invoke(messages)
+            break
+        except Exception as e:
+            if _is_ctx_len_error(e):
+                _md_tmp = _shrink_to_first_third(_md_tmp)
+                continue
+            else:
+                raise
+    # --------------------------------------------------------
+
     data = parser.invoke(result)
     pitch_idea(idea_expander, data)
     
@@ -884,9 +966,3 @@ Use this tool to explore innovation opportunities, create MVPs, and propose data
 """
 
   st.markdown(default_instructions)
-
-
-
-
-
-
