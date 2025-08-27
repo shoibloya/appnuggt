@@ -564,7 +564,23 @@ if 'user_input' in st.session_state:
                 loader_placeholder.info(f"Researching on: {search['search']} ⏳")
 
                 # Invoke the agent to get the output for the search
-                output = agent_executor.invoke({"input": search['search']})["output"]
+                try:
+                    output = agent_executor.invoke({"input": search['search']})["output"]
+                except Exception as e:
+                    if _is_ctx_len_error(e):
+                        # On context error: retry with smaller tool AND 1/3rd the final output string
+                        tools_small = [TavilySearchResults(
+                            max_results=3,
+                            include_answer=True,
+                            include_raw_content=False,
+                            search_depth="advanced"
+                        )]
+                        agent_small = create_openai_tools_agent(model, tools_small, prompt)
+                        agent_executor_small = AgentExecutor(agent=agent_small, tools=tools_small, verbose=False)
+                        output = agent_executor_small.invoke({"input": search['search']})["output"]
+                        output = _shrink_to_first_third(output)
+                    else:
+                        raise
 
                 # Replace the loader with a success message (tick emoji)
                 loader_placeholder.info(search['search'])
