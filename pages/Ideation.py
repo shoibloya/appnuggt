@@ -113,52 +113,52 @@ Given the company {user_input.get('corporate', 'a company')} in the {user_input.
 
 Come up with google searches in the following JSON format:
 
-{
-  "searches": {
+{{
+  "searches": {{
     "Consumer Behavior": [
-      {
+      {{
         "search": "Google search 1",
         "importance": "Rationale behind this search"
-      },
-      {
+      }},
+      {{
         "search": "Google search 2",
         "importance": "Rationale behind this search"
-      },
-      {
+      }},
+      {{
         "search": "Google search 3",
         "importance": "Rationale behind this search"
-      },
+      }}
     ],
     "Technological Advances": [
-      {
+      {{
         "search": "Google search 1",
         "importance": "Rationale behind this search"
-      },
-      {
+      }},
+      {{
         "search": "Google search 2",
         "importance": "Rationale behind this search"
-      },
-      {
+      }},
+      {{
         "search": "Google search 3",
         "importance": "Rationale behind this search"
-      },
+      }}
     ],
     "Competitive Landscape": [
-      {
+      {{
         "search": "Google search 1",
         "importance": "Rationale behind this search"
-      },
-      {
+      }},
+      {{
         "search": "Google search 2",
         "importance": "Rationale behind this search"
-      },
-      {
+      }},
+      {{
         "search": "Google search 3",
         "importance": "Rationale behind this search"
-      },
+      }}
     ]
-  }
-}
+  }}
+}}
 
 Ensure that the search queries within the same category do not overlap. Queries within
 the same category must be different from each other in order to properly cover all major
@@ -174,16 +174,16 @@ Your queries must be specific. We do not want general queries. Strictly specific
 to facilitate in-depth research. Think critically when asking for the following queries. 
 Come up with google searches in the following JSON format: 
 
-{
+{{
   "queries": [
-    {
+    {{
       "query": "<your first query>"
-    },
-    {
+    }},
+    {{
       "query": "<your second query>"
-    },
+    }}
   ]
-}
+}}
 
 Your answers must strictly be in this JSON format.
 """
@@ -227,9 +227,9 @@ Here are some additional points to consider for the company:
 Given the market dynamics analysis report and the additional points, identify opportunities in the
 following JSON format: 
 
-{
-  "market_analysis": {
-    "consumer_behavior": {
+{{
+  "market_analysis": {{
+    "consumer_behavior": {{
       "key_trends": [
         "Trend 1",
         "Trend 2"
@@ -246,17 +246,17 @@ following JSON format:
         "Segment 1",
         "Segment 2"
       ],
-      "industry_state": {
+      "industry_state": {{
         "before": "Describe how consumer behavior was shaped by key trends, unmet needs, underserved segments, and market gaps in the past. Include what consumers valued before current trends emerged.",
         "current": "Explain how consumer behavior is currently evolving, taking into account key trends, unmet needs, underserved segments, and market gaps. Highlight what consumers value today.",
         "future": "Forecast how consumer behavior will evolve when current key trends become dominant, addressing how unmet needs and underserved segments will shift in the future. This should be based on the identified trends, gaps, and needs.",
         "innovation": "Identify the innovation that the company should pursue to meet the future state of consumer behavior. Justify this innovation based on the current gaps, unmet needs, and trends in the market."
-      },
+      }},
       "statistics": [
-        "Extract and clearly state (in points) all statistics related to consumer behaviour in the market dynamics analysis report. Do not miss a single statistic",
+        "Extract and clearly state (in points) all statistics related to consumer behaviour in the market dynamics analysis report. Do not miss a single statistic"
       ]
-    },
-    "technological_advances": {
+    }},
+    "technological_advances": {{
       "key_trends": [
         "Trend 1",
         "Trend 2"
@@ -273,17 +273,17 @@ following JSON format:
         "Segment 1",
         "Segment 2"
       ],
-      "industry_state": {
+      "industry_state": {{
         "before": "Describe how the industry operated before the current technological trends emerged, addressing how unmet needs, underserved segments, and gaps in the market were impacted by prior technology levels.",
         "current": "Explain how technological advancements are currently shaping the industry, emphasizing key trends, unmet needs, underserved segments, and gaps in the market.",
         "future": "Forecast how technological advancements will dominate the industry and address unmet needs, underserved segments, and gaps. Base this forecast on current key trends becoming the standard in the future.",
         "innovation": "Identify the technological innovation that the company should pursue, based on the forecasted future state of technology. Justify this innovation based on current gaps, unmet needs, and trends in technological advancements."
-      },
+      }},
       "statistics": [
-        "Extract and clearly state (in points) all statistics related to technological advancements in the market dynamics analysis report. Do not miss a single statistic",
+        "Extract and clearly state (in points) all statistics related to technological advancements in the market dynamics analysis report. Do not miss a single statistic"
       ]
-    },
-    "competitive_landscape": {
+    }},
+    "competitive_landscape": {{
       "key_trends": [
         "Trend 1",
         "Trend 2"
@@ -300,18 +300,18 @@ following JSON format:
         "Segment 1",
         "Segment 2"
       ],
-      "industry_state": {
+      "industry_state": {{
         "before": "Describe how the competitive landscape looked before the current trends took hold, particularly in relation to unmet needs, underserved segments, and gaps in the market.",
         "current": "Explain how the competitive landscape is evolving, focusing on key trends, unmet needs, underserved segments, and gaps in the market today.",
         "future": "Forecast how the competitive landscape will shift in the future, with key trends becoming dominant and how that will impact unmet needs, underserved segments, and gaps.",
         "innovation": "Identify the innovation that the company should focus on to gain a competitive advantage, based on the forecasted future landscape. Justify how this innovation addresses current market gaps and unmet needs."
-      },
+      }},
       "statistics": [
-        "Extract and clearly state (in points) all statistics related to competitive landscape in the market dynamics analysis report. Do not miss a single statistic",
+        "Extract and clearly state (in points) all statistics related to competitive landscape in the market dynamics analysis report. Do not miss a single statistic"
       ]
-    }
-  }
-}
+    }}
+  }}
+}}
 
 Strictly stick to this JSON format and do not reply anything else. 
 """
