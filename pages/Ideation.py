@@ -21,7 +21,7 @@ if not os.environ.get("OPENAI_API_KEY"):
 model = ChatOpenAI(model="gpt-4o", temperature=0)
 tools = [TavilySearchResults(max_results=3, include_answer=True, include_raw_content=True, search_depth="advanced")]
 
-st.set_page_config(page_title="Nuggt Dashboard", layout="wide")
+st.set_page_config(page_title="Greenfield Entrepreneurship Dashboard", layout="wide")
 
 # ---- helper functions for shrinking on context-length error (ADDED) ----
 def _is_ctx_len_error(err: Exception) -> bool:
@@ -36,8 +36,8 @@ def _shrink_to_first_third(text: str) -> str:
 
 # Sidebar to take user input
 with st.sidebar:
-    corporate = st.text_input("Corporate (e.g. Amazon), Please put 'Greenfield Entrepreneurship' otherwise.", "Amazon")
-    industry = st.text_input("Industry", "E-commerce")
+    corporate = st.text_input("Corporate (e.g. Amazon), Please put 'Greenfield Entrepreneurship' otherwise.", "Greenfield Entrepreneurship")
+    industry = st.text_input("Industry", "New Venture (Greenfield)")
     company_overview = st.text_area("Company Overview (What does the company do?)", "")
     competitors = st.text_area("Competitors (Who are the key competitors?)", "")
     geographic_focus = st.text_input("Geographic Focus (Primary regions of operation)", "")
@@ -73,6 +73,7 @@ sys_prompt_search_agent = f"""
 You are an expert of the market analysis framework. In this case, you are conducting
 market analysis for the team at {user_input.get('corporate', 'a company')} who are trying to identify the 
 next disruptive opportunity in the {user_input.get('industry', 'industry')}. 
+Context: Treat this as a greenfield entrepreneurship effort (zero-to-one, no legacy constraints, assume limited initial resources).
 
 {'The company overview is as follows: ' + user_input.get("company_overview") if user_input.get("company_overview") else ''}
 {'They compete with the following competitors: ' + user_input.get("competitors") if user_input.get("competitors") else ''}
@@ -90,15 +91,18 @@ in less than 5 detailed points. For all your answers, you always provide the sou
 """
 
 sys_prompt_market_analysis = f"""
-You are a corporate innovation expert. Given a company your job is 
+You are a greenfield entrepreneurship expert. Given a company your job is 
 to propose corporate innovation projects that the company can consider. 
+Assume zero existing assets; focus on zero-to-one opportunities, first customers, and fast validation.
 
 You identify innovation opportunities based on the Market Analysis Framework
 which includes the following:
 
 1. Consumer Behavior
-2. Technological Advances
-3. Competitive Landscape
+2. Economic Conditions
+3. Technological Advances
+4. Competitive Landscape
+5. Regulatory Environment
 
 Given the company {user_input.get('corporate', 'a company')} in the {user_input.get('industry', 'industry')} industry,
 {',with the following overview: ' + user_input.get("company_overview") if user_input.get("company_overview") else ''}
@@ -113,52 +117,80 @@ Given the company {user_input.get('corporate', 'a company')} in the {user_input.
 
 Come up with google searches in the following JSON format:
 
-{{
-  "searches": {{
+{
+  "searches": {
     "Consumer Behavior": [
-      {{
+      {
         "search": "Google search 1",
         "importance": "Rationale behind this search"
-      }},
-      {{
+      },
+      {
         "search": "Google search 2",
         "importance": "Rationale behind this search"
-      }},
-      {{
+      },
+      {
         "search": "Google search 3",
         "importance": "Rationale behind this search"
-      }}
+      },
+    ],
+    "Economic Conditions": [
+      {
+        "search": "Google search 1",
+        "importance": "Rationale behind this search"
+      },
+      {
+        "search": "Google search 2",
+        "importance": "Rationale behind this search"
+      },
+      {
+        "search": "Google search 3",
+        "importance": "Rationale behind this search"
+      },
     ],
     "Technological Advances": [
-      {{
+      {
         "search": "Google search 1",
         "importance": "Rationale behind this search"
-      }},
-      {{
+      },
+      {
         "search": "Google search 2",
         "importance": "Rationale behind this search"
-      }},
-      {{
+      },
+      {
         "search": "Google search 3",
         "importance": "Rationale behind this search"
-      }}
+      },
     ],
     "Competitive Landscape": [
-      {{
+      {
         "search": "Google search 1",
         "importance": "Rationale behind this search"
-      }},
-      {{
+      },
+      {
         "search": "Google search 2",
         "importance": "Rationale behind this search"
-      }},
-      {{
+      },
+      {
         "search": "Google search 3",
         "importance": "Rationale behind this search"
-      }}
+      },
+    ],
+    "Regulatory Environment": [
+      {
+        "search": "Google search 1",
+        "importance": "Rationale behind this search"
+      },
+      {
+        "search": "Google search 2",
+        "importance": "Rationale behind this search"
+      },
+      {
+        "search": "Google search 3",
+        "importance": "Rationale behind this search"
+      },
     ]
-  }}
-}}
+  }
+}
 
 Ensure that the search queries within the same category do not overlap. Queries within
 the same category must be different from each other in order to properly cover all major
@@ -172,18 +204,19 @@ presented with information and data from general research about {user_input.get(
 you come up with 2 specific google search queries to gain more information and new data on crucial findings.
 Your queries must be specific. We do not want general queries. Strictly specific queries
 to facilitate in-depth research. Think critically when asking for the following queries. 
+Treat all findings through a greenfield entrepreneurship lens (zero-to-one constraints). 
 Come up with google searches in the following JSON format: 
 
-{{
+{
   "queries": [
-    {{
+    {
       "query": "<your first query>"
-    }},
-    {{
+    },
+    {
       "query": "<your second query>"
-    }}
+    },
   ]
-}}
+}
 
 Your answers must strictly be in this JSON format.
 """
@@ -212,6 +245,7 @@ sys_prompt_key_insights = f"""
 You are an expert in identifying disruptive innovation opportunities for 
 {user_input.get('corporate', 'a company')} in the {user_input.get('industry', 'industry')} industry
 based on market dynamics analysis reports. 
+Optimize for greenfield entrepreneurship (zero-to-one), prioritizing speed to first value and capital efficiency.
 
 Here are some additional points to consider for the company:
 {'The company overview is as follows: ' + user_input.get("company_overview") if user_input.get("company_overview") else ''}
@@ -227,9 +261,9 @@ Here are some additional points to consider for the company:
 Given the market dynamics analysis report and the additional points, identify opportunities in the
 following JSON format: 
 
-{{
-  "market_analysis": {{
-    "consumer_behavior": {{
+{
+  "market_analysis": {
+    "consumer_behavior": {
       "key_trends": [
         "Trend 1",
         "Trend 2"
@@ -246,17 +280,17 @@ following JSON format:
         "Segment 1",
         "Segment 2"
       ],
-      "industry_state": {{
+      "industry_state": {
         "before": "Describe how consumer behavior was shaped by key trends, unmet needs, underserved segments, and market gaps in the past. Include what consumers valued before current trends emerged.",
         "current": "Explain how consumer behavior is currently evolving, taking into account key trends, unmet needs, underserved segments, and market gaps. Highlight what consumers value today.",
         "future": "Forecast how consumer behavior will evolve when current key trends become dominant, addressing how unmet needs and underserved segments will shift in the future. This should be based on the identified trends, gaps, and needs.",
         "innovation": "Identify the innovation that the company should pursue to meet the future state of consumer behavior. Justify this innovation based on the current gaps, unmet needs, and trends in the market."
-      }},
+      },
       "statistics": [
-        "Extract and clearly state (in points) all statistics related to consumer behaviour in the market dynamics analysis report. Do not miss a single statistic"
+        "Extract and clearly state (in points) all statistics related to consumer behaviour in the market dynamics analysis report. Do not miss a single statistic",
       ]
-    }},
-    "technological_advances": {{
+    },
+    "economic_conditions": {
       "key_trends": [
         "Trend 1",
         "Trend 2"
@@ -273,17 +307,44 @@ following JSON format:
         "Segment 1",
         "Segment 2"
       ],
-      "industry_state": {{
+      "industry_state": {
+        "before": "Describe the economic conditions that influenced the market in the past, focusing on how key trends, unmet needs, underserved segments, and market gaps were addressed or not.",
+        "current": "Explain the current economic conditions and their impact on the industry, emphasizing how they align with key trends, gaps, and unmet needs in the market.",
+        "future": "Forecast future economic conditions and how they will shape the industry, highlighting the expected dominance of current trends and how unmet needs and underserved segments will evolve.",
+        "innovation": "Identify the economic-focused innovation the company should adopt, based on the forecasted future conditions and unmet needs. Justify why this innovation aligns with future economic trends and addresses market gaps."
+      },
+      "statistics": [
+        "Extract and clearly state (in points) all statistics related to economic conditions in the market dynamics analysis report. Do not miss a single statistic",
+      ]
+    },
+    "technological_advances": {
+      "key_trends": [
+        "Trend 1",
+        "Trend 2"
+      ],
+      "gaps_in_market": [
+        "Gap 1",
+        "Gap 2"
+      ],
+      "unmet_needs": [
+        "Unmet Need 1",
+        "Unmet Need 2"
+      ],
+      "underserved_segments": [
+        "Segment 1",
+        "Segment 2"
+      ],
+      "industry_state": {
         "before": "Describe how the industry operated before the current technological trends emerged, addressing how unmet needs, underserved segments, and gaps in the market were impacted by prior technology levels.",
         "current": "Explain how technological advancements are currently shaping the industry, emphasizing key trends, unmet needs, underserved segments, and gaps in the market.",
         "future": "Forecast how technological advancements will dominate the industry and address unmet needs, underserved segments, and gaps. Base this forecast on current key trends becoming the standard in the future.",
         "innovation": "Identify the technological innovation that the company should pursue, based on the forecasted future state of technology. Justify this innovation based on current gaps, unmet needs, and trends in technological advancements."
-      }},
+      },
       "statistics": [
-        "Extract and clearly state (in points) all statistics related to technological advancements in the market dynamics analysis report. Do not miss a single statistic"
+        "Extract and clearly state (in points) all statistics related to technological advancements in the market dynamics analysis report. Do not miss a single statistic",
       ]
-    }},
-    "competitive_landscape": {{
+    },
+    "competitive_landscape": {
       "key_trends": [
         "Trend 1",
         "Trend 2"
@@ -300,21 +361,155 @@ following JSON format:
         "Segment 1",
         "Segment 2"
       ],
-      "industry_state": {{
+      "industry_state": {
         "before": "Describe how the competitive landscape looked before the current trends took hold, particularly in relation to unmet needs, underserved segments, and gaps in the market.",
         "current": "Explain how the competitive landscape is evolving, focusing on key trends, unmet needs, underserved segments, and gaps in the market today.",
         "future": "Forecast how the competitive landscape will shift in the future, with key trends becoming dominant and how that will impact unmet needs, underserved segments, and gaps.",
         "innovation": "Identify the innovation that the company should focus on to gain a competitive advantage, based on the forecasted future landscape. Justify how this innovation addresses current market gaps and unmet needs."
-      }},
+      },
       "statistics": [
-        "Extract and clearly state (in points) all statistics related to competitive landscape in the market dynamics analysis report. Do not miss a single statistic"
+        "Extract and clearly state (in points) all statistics related to competitive landscape in the market dynamics analysis report. Do not miss a single statistic",
       ]
-    }}
-  }}
-}}
+    },
+    "regulatory_environment": {
+      "key_trends": [
+        "Trend 1",
+        "Trend 2"
+      ],
+      "gaps_in_market": [
+        "Gap 1",
+        "Gap 2"
+      ],
+      "unmet_needs": [
+        "Unmet Need 1",
+        "Unmet Need 2"
+      ],
+      "underserved_segments": [
+        "Segment 1",
+        "Segment 2"
+      ],
+      "industry_state": {
+        "before": "Describe how regulations shaped the industry before the current trends, and how unmet needs, underserved segments, and market gaps were addressed by previous regulatory conditions.",
+        "current": "Explain the current regulatory environment, emphasizing how it is responding to key trends, unmet needs, underserved segments, and gaps in the market.",
+        "future": "Forecast how regulations will change in the future and how they will impact key trends, unmet needs, underserved segments, and market gaps.",
+        "innovation": "Identify the regulatory-focused innovation the company should pursue, based on future regulatory changes. Justify why this innovation will align with future regulations and address current gaps in the market."
+      },
+      "statistics": [
+        "Extract and clearly state (in points) all statistics related to regulatory environment in the market dynamics analysis report. Do not miss a single statistic",
+      ]
+    }
+  }
+}
 
 Strictly stick to this JSON format and do not reply anything else. 
 """
+
+def pitch_idea(idea_expander, data):
+  with idea_expander:
+      # Story - Past Character
+      st.subheader("1. Story-Based Characters")
+      st.markdown("### Past Character")
+      st.info(f"**Description:** {data['big_picture_innovation']['story']['past_character']['description']}")
+      st.markdown(f"**Use Case:** {data['big_picture_innovation']['story']['past_character']['use_case']}")
+      st.markdown(f"**Story:** {data['big_picture_innovation']['story']['past_character']['simple_story']}")
+      
+      # Story - Current Character
+      st.markdown("### Current Character")
+      st.info(f"**Description:** {data['big_picture_innovation']['story']['current_character']['description']}")
+      st.markdown(f"**Use Case:** {data['big_picture_innovation']['story']['current_character']['use_case']}")
+      st.markdown(f"**Story:** {data['big_picture_innovation']['story']['current_character']['simple_story']}")
+      
+      # Story - Future Character
+      st.markdown("### Future Character")
+      st.info(f"**Description:** {data['big_picture_innovation']['story']['future_character']['description']}")
+      st.markdown(f"**Use Case:** {data['big_picture_innovation']['story']['future_character']['use_case']}")
+      st.markdown(f"**Story:** {data['big_picture_innovation']['story']['future_character']['simple_story']}")
+      
+      # Future Product
+      st.markdown("### Future Product")
+      st.success(f"**Description:** {data['big_picture_innovation']['story']['future_product']['description']}")
+      
+      # Innovation Plan
+      st.header("Innovation Plan")
+
+      # Existing Solution
+      st.subheader("2. Existing Solution")
+      st.info(f"**Current Solution:** {data['innovation_plan']['existing_solution']['description']}")
+      
+      # Most Crucial Change
+      st.subheader("3. Most Crucial Change")
+      st.warning(f"**One Key Change:** {data['innovation_plan']['most_crucial_change']['description']}")
+      
+      # Justification
+      st.markdown(f"**Justification:** {data['innovation_plan']['justification']['description']}")
+      
+      # MVP, POC, GTM
+      st.header("MVP, POC, and Go-To-Market Strategy")
+
+      # Leap of Faith Assumption
+      st.subheader("4. Leap of Faith Assumption")
+      st.info(f"**Assumption:** {data['mvp_poc_gtm']['leap_of_faith_assumption']['description']}")
+      
+      # MVP Section
+      st.subheader("5. Minimum Viable Product (MVP)")
+      st.success(f"**MVP Description:** {data['mvp_poc_gtm']['mvp']['description']}")
+      st.markdown("### Key Features")
+      for feature in data['mvp_poc_gtm']['mvp']['key_features']:
+          st.markdown(f"- {feature}")
+      st.markdown(f"**Success Criteria:** {data['mvp_poc_gtm']['mvp']['success_criteria']}")
+      
+      # POC Section
+      st.subheader("6. Proof of Concept (POC)")
+      st.success(f"**POC Description:** {data['mvp_poc_gtm']['poc']['description']}")
+      st.markdown("### Validation Goals")
+      for goal in data['mvp_poc_gtm']['poc']['validation_goals']:
+          st.markdown(f"- {goal}")
+      st.markdown("### Potential Obstacles")
+      for obstacle in data['mvp_poc_gtm']['poc']['potential_obstacles']:
+          st.markdown(f"- {obstacle}")
+      
+      # Beachhead Market
+      st.subheader("7. Beachhead Market")
+      st.info(f"**Description:** {data['mvp_poc_gtm']['beachhead_market']['description']}")
+      st.markdown("### Market Characteristics")
+      for characteristic in data['mvp_poc_gtm']['beachhead_market']['market_characteristics']:
+          st.markdown(f"- {characteristic}")
+      st.markdown("### Key Assumptions")
+      for assumption in data['mvp_poc_gtm']['beachhead_market']['key_assumptions']:
+          st.markdown(f"- {assumption}")
+      
+      # Go-To-Market Strategy
+      st.subheader("8. Go-To-Market (GTM) Strategy")
+      st.success(f"**GTM Strategy:** {data['mvp_poc_gtm']['gtm_strategy']['strategy']}")
+      st.markdown("### Tests and Targets")
+      for test in data['mvp_poc_gtm']['gtm_strategy']['tests_and_targets']['tests']:
+          st.markdown(f"- Test: {test}")
+      for target in data['mvp_poc_gtm']['gtm_strategy']['tests_and_targets']['targets']:
+          st.markdown(f"- Target: {target}")
+      st.markdown(f"**Cost:** {data['mvp_poc_gtm']['gtm_strategy']['cost']}")
+      st.markdown(f"**Timeline:** {data['mvp_poc_gtm']['gtm_strategy']['timeline']}")
+      
+      # Financial Projections
+      st.header("Financial Projections")
+      st.markdown("### Projection Methodology")
+      st.success(f"**Methodology:** {data['financial_projections']['projection_methodology']}")
+      
+      st.markdown("### Revenue Growth Projections")
+      st.markdown(f"**Year 1:** {data['financial_projections']['estimated_revenue_growth']['year_1']['revenue']} "
+                  f"({data['financial_projections']['estimated_revenue_growth']['year_1']['reasoning']})")
+      st.markdown(f"**Year 2:** {data['financial_projections']['estimated_revenue_growth']['year_2']['revenue']} "
+                  f"({data['financial_projections']['estimated_revenue_growth']['year_2']['reasoning']})")
+      st.markdown(f"**Year 3:** {data['financial_projections']['estimated_revenue_growth']['year_3']['revenue']} "
+                  f"({data['financial_projections']['estimated_revenue_growth']['year_3']['reasoning']})")
+      
+      st.markdown("### Profit Margins")
+      st.markdown(f"**Year 1:** {data['financial_projections']['profit_margins']['year_1']}")
+      st.markdown(f"**Year 2:** {data['financial_projections']['profit_margins']['year_2']}")
+      st.markdown(f"**Year 3:** {data['financial_projections']['profit_margins']['year_3']}")
+      
+      st.markdown("### Break-Even Analysis")
+      st.markdown(f"**Break-Even Timeline:** {data['financial_projections']['break_even_analysis']['break_even_timeline']}")
+      st.markdown(f"**Conditions for Break-Even:** {data['financial_projections']['break_even_analysis']['conditions']}")
 
 if 'user_input' in st.session_state:
     # Define the interaction for invoking the model with updated prompts
@@ -334,19 +529,31 @@ if 'user_input' in st.session_state:
     
     expand_it = True
     expanders = {}
-    for category in ["Consumer Behavior", "Technological Advances", "Competitive Landscape"]:
+    for category in ["Consumer Behavior", "Economic Conditions", "Technological Advances", "Competitive Landscape", "Regulatory Environment"]:
         # Create an expander for each category and store in a dictionary
         expanders[category] = st.expander(f"Category: {category}", expanded=expand_it)
         expand_it = False
 
     # First loop to show "Collating insights" inside the expander for each category
-    for category in ["Consumer Behavior", "Technological Advances", "Competitive Landscape"]:
+    for category in ["Consumer Behavior", "Economic Conditions", "Technological Advances", "Competitive Landscape", "Regulatory Environment"]:
         with expanders[category]:
             st.warning(f"Collating insights on '{category}'")
     
     report_expander = st.expander(f"Identified Areas of Innovation", expanded=False)
     with report_expander:
       st.warning(f"Key Insights Report")
+    
+    idea_simple = st.expander(f"Proposed Innovation By GPT-4o-mini [Simple Model]", expanded=False)
+    with idea_simple:
+      st.warning(f"Innovation Pitch Deck (GPT-4o-mini)")
+
+    idea_standard = st.expander(f"Proposed Innovation By GPT-4o [Standard Model]", expanded=False)
+    with idea_standard:
+      st.warning(f"Innovation Pitch Deck (GPT-4o)")
+        
+    idea_expander = st.expander(f"Proposed Innovation By gpt-4.1 [Powerful Model]", expanded=False)
+    with idea_expander:
+      st.warning(f"Innovation Pitch Deck (gpt-4.1)")
         
     # Second loop to populate the expanders with the content
     for category, searches in answer['searches'].items():
@@ -461,16 +668,236 @@ if 'user_input' in st.session_state:
           
           st.markdown("---")
     
+    sys_final_innovation = f"""
+    You are an expert in coming up with practical MVP solutions to test leap of
+    faith assumptions extracted from the market dynamics analysis report for {user_input.get('corporate', 'a company')} 
+    in the {user_input.get('industry', 'industry')} industry. Use the provided statistics to make your points. Your answer must have
+    statistics to back your assumptions. 
+    Optimize for greenfield entrepreneurship: prioritize fastest path to first value, capital efficiency, and narrow beachheads.
+    
+    Here are some additional things to consider:
+    {'The company overview is as follows: ' + user_input.get("company_overview") if user_input.get("company_overview") else ''}
+    {'They compete with the following competitors: ' + user_input.get("competitors") if user_input.get("competitors") else ''}
+    {'They operate primarily in: ' + user_input.get("geographic_focus") if user_input.get("geographic_focus") else ''}
+    {'Their customer base is: ' + user_input.get("customer_base") if user_input.get("customer_base") else ''}
+    {'Their business model includes: ' + user_input.get("business_model") if user_input.get("business_model") else ''}
+    {'They are currently facing these key challenges: ' + user_input.get("key_challenges") if user_input.get("key_challenges") else ''}
+    {'Recent developments or news about the company include: ' + user_input.get("recent_news") if user_input.get("recent_news") else ''}
+    {'The company is considering the following rough idea: ' + user_input.get("rough_idea") if user_input.get("rough_idea") else ''}
+    {'Additional insights include: ' + user_input.get("additional_insights") if user_input.get("additional_insights") else ''}
+
+    
+    From a given market analysis insight and the additional points, you design the validation experiment in the following
+    JSON format:
+
+    {{
+      "Overview": "Clear description of the innovation and the idea.",
+      "big_picture_innovation": {{
+        "story": {{
+          "past_character": {{
+            "description": "Describe the character from the past, how they used the product, and how it aligned with the trends, unmet needs, and gaps in the market during that time.",
+            "use_case": "How this character used the product, focusing on past market trends and gaps in the market.",
+            "simple_story": "Based on the description and usecase give this character a name and persona and write a simple 4-5 line paragraph describing how he or she used the product."
+          }},
+          "current_character": {{
+            "description": "Describe the current user, what key trends, unmet needs, and gaps are shaping their usage today.",
+            "use_case": "How the current user is using the product to meet their present needs and how it serves them based on today’s market dynamics.",
+            "simple_story": "Based on the description and usecase give this character a name and persona and write a simple 4-5 line paragraph describing how he or she using the product."
+          }},
+          "future_character": {{
+            "description": "Describe the future character, their needs, the future key trends, and gaps in the market that will affect their usage.",
+            "use_case": "How this character in the future will use the ideal product to meet their future needs based on forecasted trends and market gaps.",
+            "simple_story": "Based on the description and usecase give this character a name and persona and write a simple 4-5 line paragraph describing how he or she will use the product."
+          }},
+          "future_product": {{
+            "description": "Define the ideal product that can meet the demands of the future character. How this product solves future unmet needs, addresses future gaps, and capitalizes on future market trends."
+          }}
+        }}
+      }},
+      "innovation_plan": {{
+        "existing_solution": {{
+          "description": "Define the existing solution as it is today, explaining how it meets the current market needs."
+        }},
+        "most_crucial_change": {{
+          "description": "State the one most crucial change that needs to be made to the current product. This change should address an unmet need of today’s users and be a step toward the future ideal product described earlier. This change must be technically feasible and testable."
+        }},
+        "justification": {{
+          "description": "Explain why this change is the most crucial, how it serves current users better, and how it is a step toward the future product based on trends, gaps, and unmet needs."
+        }}
+      }},
+      "mvp_poc_gtm": {{
+        "leap_of_faith_assumption": {{
+          "description": "Define the leap of faith assumption based on the one crucial change. This should be a core hypothesis that, if proven, will validate that the chosen change will move the product toward the ideal future state."
+        }},
+        "mvp": {{
+          "description": "Describe the Minimum Viable Product (MVP) designed to test the leap of faith assumption. This should offer only the core value proposition of the crucial change with minimal features. Give a practical MVP that can be easily build by clearly laying out the core features",
+          "key_features": [
+            "Core feature 1",
+            "Core feature 2"
+          ],
+          "success_criteria": "Metrics or benchmarks that will determine if the MVP is successful (e.g., X number of users, Y amount of revenue)."
+        }},
+        "poc": {{
+          "description": "Description of the Proof of Concept (POC) to validate the feasibility of the MVP. The POC should aim to prove that the innovation can work from a technical and business standpoint.",
+          "validation_goals": [
+            "Technical feasibility goal",
+            "Business validation goal"
+          ],
+          "potential_obstacles": [
+            "Technical challenge 1",
+            "Market adoption challenge 2"
+          ]
+        }},
+        "beachhead_market": {{
+          "description": "Identification of the beachhead market for initial testing. This market should be small enough to control costs but large enough to provide meaningful insights for scaling.",
+          "market_characteristics": [
+            "Characteristic 1 (e.g., specific demographic or geographic area)",
+            "Characteristic 2 (e.g., industry vertical or early adopters)"
+          ],
+          "key_assumptions": [
+            "Assumption 1 about the market",
+            "Assumption 2 about customer behavior"
+          ]
+        }},
+        "gtm_strategy": {{
+          "strategy": "High-level Go-To-Market (GTM) strategy for the beachhead market, including marketing, sales, and distribution plans.",
+          "tests_and_targets": {{
+            "tests": [
+              "Test 1: Hypothesis that will be validated (e.g., customer willingness to pay)",
+              "Test 2: Hypothesis related to product performance"
+            ],
+            "targets": [
+              "Target 1: Key metric (e.g., number of beta users)",
+              "Target 2: Key result (e.g., minimum viable revenue)"
+            ]
+          }},
+          "cost": "Estimated cost for the validation and testing process (e.g., $X for product development, $Y for marketing).",
+          "timeline": "Estimated timeline for the validation process, including milestones for MVP launch, POC, and GTM phases."
+        }}
+      }},
+      "financial_projections": {{
+        "projection_methodology": "Define the financial projection methodology used, based on lean startup assumptions, market potential, and estimated cost structures.",
+        "estimated_revenue_growth": {{
+          "year_1": {{
+            "revenue": "$X",
+            "reasoning": "Explanation for how Year 1 revenue is estimated based on market size and MVP success."
+          }},
+          "year_2": {{
+            "revenue": "$Y",
+            "reasoning": "Reasoning behind Year 2 revenue growth based on market expansion, product adoption, and scaling efforts."
+          }},
+          "year_3": {{
+            "revenue": "$Z",
+            "reasoning": "Projections for Year 3 based on product improvements, market penetration, and customer retention."
+          }}
+        }},
+        "profit_margins": {{
+          "year_1": "Estimated profit margin in Year 1, with a justification based on early-stage product costs.",
+          "year_2": "Expected profit margin for Year 2, considering market adoption and scaling.",
+          "year_3": "Profit margin for Year 3, as the product reaches more maturity and efficiency in cost structure."
+        }},
+        "break_even_analysis": {{
+          "break_even_timeline": "Estimated timeline for reaching the break-even point.",
+          "conditions": "Conditions necessary for the break-even point to be achieved (e.g., revenue target, cost reductions, market growth)."
+        }}
+      }}
+    }}
+
+    Strictly stick to this JSON format and do not reply anything else. 
+    """
+    messages = [
+        SystemMessage(content=sys_final_innovation),
+        HumanMessage(content=f"Marketing Dynamics Analysis:\n{market_dynamics}"),
+    ]
+    model = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+
+    # --- SHRINK-ON-ERROR WRAP (ADDED) for first final-innovation step ---
+    _md_tmp = market_dynamics
+    while True:
+        try:
+            messages = [
+                SystemMessage(content=sys_final_innovation),
+                HumanMessage(content=f"Marketing Dynamics Analysis:\n{_md_tmp}"),
+            ]
+            result = model.invoke(messages)
+            break
+        except Exception as e:
+            if _is_ctx_len_error(e):
+                _md_tmp = _shrink_to_first_third(_md_tmp)
+                continue
+            else:
+                raise
+    # --------------------------------------------------------------------
+
+    data = parser.invoke(result)
+    idea_1 = data["Overview"]
+    pitch_idea(idea_simple, data)
+
+    messages = [
+        SystemMessage(content=sys_final_innovation),
+        HumanMessage(content=f"Marketing Dynamics Analysis:\n{market_dynamics}\n\nCome up with an idea that is different from {idea_1}"),
+    ]
+    model = ChatOpenAI(model="gpt-4o", temperature=1)
+
+    # --- SHRINK-ON-ERROR WRAP (ADDED) for second final-innovation step ---
+    _md_tmp = market_dynamics
+    while True:
+        try:
+            messages = [
+                SystemMessage(content=sys_final_innovation),
+                HumanMessage(content=f"Marketing Dynamics Analysis:\n{_md_tmp}\n\nCome up with an idea that is different from {idea_1}"),
+            ]
+            result = model.invoke(messages)
+            break
+        except Exception as e:
+            if _is_ctx_len_error(e):
+                _md_tmp = _shrink_to_first_third(_md_tmp)
+                continue
+            else:
+                raise
+    # ---------------------------------------------------------------------
+
+    data = parser.invoke(result)
+    idea_2 = data["Overview"]
+    pitch_idea(idea_standard, data)
+    
+    messages = [
+        #SystemMessage(content=sys_final_innovation),
+        HumanMessage(content=f"{sys_final_innovation}\n\nMarketing Dynamics Analysis:\n{market_dynamics}\n\nRemember to make use of statistics to make your case.\n\nCome up with an idea that is different from {idea_1} and different from {idea_2}"),
+    ]
+    model = ChatOpenAI(model="gpt-4.1", temperature=1)
+
+    # --- SHRINK-ON-ERROR WRAP (ADDED) for o1-preview step ---
+    _md_tmp = market_dynamics
+    while True:
+        try:
+            messages = [
+                #SystemMessage(content=sys_final_innovation),
+                HumanMessage(content=f"{sys_final_innovation}\n\nMarketing Dynamics Analysis:\n{_md_tmp}\n\nRemember to make use of statistics to make your case.\n\nCome up with an idea that is different from {idea_1} and different from {idea_2}"),
+            ]
+            result = model.invoke(messages)
+            break
+        except Exception as e:
+            if _is_ctx_len_error(e):
+                _md_tmp = _shrink_to_first_third(_md_tmp)
+                continue
+            else:
+                raise
+    # --------------------------------------------------------
+
+    data = parser.invoke(result)
+    pitch_idea(idea_expander, data)
+    
 else:
   default_instructions = """
-# **Welcome to the Market Dynamics Report Generator to Validate Startup Ideas and Identify Opportunities**
+# **Welcome to the Greenfield Market Dynamics Report Generator to Validate Startup Ideas and Identify Opportunities**
 
 ### **Step-by-Step Instructions**
 
 ### **1. Provide Input in the Sidebar:**
 
 - **Company (required):** Enter the name of the company you’re working with.  
-  **Example:** `Amazon`
+  **Example:** `Greenfield Entrepreneurship` (use this if you’re a new venture)
 
 - **Industry (required):** Specify the industry you want to innovate in.  
   **Example:** `E-commerce, Cloud Services`
@@ -513,10 +940,12 @@ After entering the required and optional fields, click the button to generate yo
 
 ### **3. Categories of Research:**
 
-After clicking the button, the system will research and gather insights based on three key categories:
+After clicking the button, the system will research and gather insights based on five key categories:
 - **Consumer Behavior**
+- **Economic Conditions**
 - **Technological Advances**
 - **Competitive Landscape**
+- **Regulatory Environment**
 
 ---
 
@@ -531,7 +960,30 @@ The tool will generate a **Market Insight Report** covering:
 
 ---
 
-Use this tool to explore innovation opportunities, create MVPs, and propose data-backed strategies aligned with your business goals and the future industry trends.
+### **5. Innovation Pitch:**
+
+The final section will generate an **Innovation Pitch**, which includes:
+- **Past, Current, and Future Character Stories:** Illustrates how users from the past, present, and future interact with the product or service, showing how market trends and gaps impact them.
+- **Ideal Future Product:** A description of the future product that meets the needs of future users based on identified trends and gaps.
+- **Innovation Plan:** Outlines the current solution and identifies the most crucial change required to meet market demands.
+- **MVP, POC, and Go-To-Market Strategy:** A detailed plan to create a Minimum Viable Product (MVP) for testing the core innovation, followed by a Proof of Concept (POC) and initial Go-To-Market strategy. This includes:
+  - **Leap of Faith Assumption:** A core assumption that will be tested through the MVP.
+  - **Market Characteristics:** Target market (beachhead market) for testing.
+  - **Tests, Targets, and Timeline:** Specific metrics for validating the innovation, cost estimates, and timelines.
+- **Financial Projections:** Financial forecasts including revenue growth, profit margins, and break-even analysis.
+
+---
+
+### **6. Pitch Deck Models:**
+
+You will receive **three pitch decks**:
+- **gpt-4.1 (most powerful model):** Provides in-depth insights.
+- **gpt-4o (standard model):** Offers detailed insights with practical considerations.
+- **gpt-4o-mini (simpler model):** Generates concise reports for quick insights.
+
+---
+
+Use this tool to explore innovation opportunities, create MVPs, and propose data-backed strategies aligned with greenfield entrepreneurship, zero-to-one execution, and future industry trends.
 """
 
   st.markdown(default_instructions)
