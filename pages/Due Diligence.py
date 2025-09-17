@@ -22,7 +22,7 @@ if not os.environ.get("OPENAI_API_KEY"):
     os.environ["OPENAI_API_KEY"] = st.secrets['apiKey']
 
 # Create the main LLM model (GPT-4o) for the entire pipeline
-model = ChatOpenAI(model="gpt-4o", temperature=0)
+model = ChatOpenAI(model="gpt-4.1", temperature=0)
 
 # Create the tool for advanced searching (via TavilySearchResults)
 tools = [TavilySearchResults(max_results=3, include_answer=True, include_raw_content=True, search_depth="advanced")]
