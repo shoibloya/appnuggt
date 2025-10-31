@@ -16,7 +16,7 @@ from langchain.agents import AgentExecutor, create_openai_tools_agent
 from langchain_community.tools.tavily_search import TavilySearchResults
 
 # -------------------------- App Config --------------------------
-st.set_page_config(page_title="BUTA Beachhead Finder (Simple, Detailed Snippets)", layout="wide")
+st.set_page_config(page_title="BUTA Beachhead Finder (Simple)", layout="wide")
 
 # Secrets/env
 if not os.environ.get("OPENAI_API_KEY"):
@@ -120,13 +120,16 @@ Write a single, clean BUTA report that includes:
 2) Evidence bullets (2–4 per dimension) with source links inline.
 3) Go-to-market hypothesis, Key risks, Immediate validation steps.
 
-IMPORTANT: After the narrative, DO NOT include any appendix yourself; the app will append a complete Research Appendix verbatim.
+IMPORTANT: After the narrative, append a complete “Research Appendix” that includes EVERY Tavily query and ALL bullets exactly as gathered (do not omit anything).
 
 Idea overview:
 {idea_overview}
 
 Recommended beachheads with evaluations:
 {evaluations}
+
+All research notes (full text):
+{full_research_notes}
 
 Produce one readable report (no code or JSON).
 """
@@ -158,13 +161,18 @@ def run_tavily_query(q: str) -> str:
         out = f"- Search error for '{q}': {e}"
     return out
 
-def research_dimension(segment: str, dim: str, queries: List[str], step_fn) -> str:
+def research_dimension(segment: str, dim: str, queries: List[str]) -> str:
+    # Detailed snippet updates for exact queries
+    global steps_done, TOTAL_STEPS
     notes = f"\n=== {segment} :: {dim} ===\n"
     for q in queries:
-        step_fn(f"I am searching for '{q}'.")
+        steps_done += 1
+        step(f"I am searching for '{q}'.", steps_done, TOTAL_STEPS)
         bullets = run_tavily_query(q)
-        step_fn(f"I finished searching for '{q}'.")
-        notes += f"Query: {q}\n{bullets}\n"
+        steps_done += 1
+        step(f"I finished searching for '{q}'.", steps_done, TOTAL_STEPS)
+        notes += f"Query: {q}\n"
+        notes += bullets + "\n"
     return notes
 
 def score_eval(ev: Dict[str,Any]) -> int:
@@ -172,7 +180,7 @@ def score_eval(ev: Dict[str,Any]) -> int:
     return sum(rank[ev["BUTA"][k]["rating"]] for k in ["budget","urgency","top_fit","access"])
 
 # -------------------------- UI --------------------------
-st.title("BUTA Beachhead Finder — Simple, Detailed Progress")
+st.title("BUTA Beachhead Finder — Simple")
 
 if not start:
     st.info("Fill in Problem and Solution, then click **Run BUTA**.")
@@ -182,21 +190,20 @@ if not problem.strip() or not solution.strip():
     st.error("Please fill in both required fields: Problem and Solution.")
     st.stop()
 
-# -------------------------- Progress Bar + Detailed Snippets --------------------------
+# -------------------------- Progress Bar + Snippets --------------------------
 snippet = st.empty()
 progress = st.progress(0.0, text="Initializing…")
 
-# Max plan: up to 3 rounds; each round = 1 plan + (2 queries * 4 dims) * 2 steps per query (start+finish) + 1 evaluate
-# => 1 + (8 * 2) + 1 = 18 steps/round. Plus 1 final compile step => 55 total for 3 rounds.
-TOTAL_STEPS = 55
-steps_done = 0
-
-def step(msg: str):
-    """Update snippet and progress. Ensures progress moves as things happen."""
-    nonlocal steps_done
-    steps_done += 1
+def step(msg: str, done: int, total: int):
     snippet.info(msg)
-    progress.progress(min(steps_done / TOTAL_STEPS, 1.0), text=msg)
+    progress.progress(min(done/total, 1.0), text=msg)
+
+# Updated total to account for per-query start/finish messages:
+# per round: 1 (plan) + 4 dims * 2 queries * 2 steps (start+finish) = 16 + 1 evaluate = 18
+# 3 rounds => 54 + 1 final compile => 55
+MAX_ROUNDS = 3
+TOTAL_STEPS = MAX_ROUNDS * (1 + (4*2*2) + 1) + 1
+steps_done = 0
 
 # -------------------------- Overview (kept simple) --------------------------
 idea_overview_lines = [
@@ -216,10 +223,11 @@ attempts: List[Dict[str, Any]] = []
 recommendations: List[Dict[str, Any]] = []
 
 previous_attempts_text = ""
-MAX_ROUNDS = 3
 
 for round_idx in range(1, MAX_ROUNDS + 1):
-    step(f"I am planning the next best segment to investigate (round {round_idx}).")
+    # Plan
+    steps_done += 1
+    step(f"Round {round_idx}: I am planning the next best segment to investigate.", steps_done, TOTAL_STEPS)
 
     plan_input = f"""
 Idea:
@@ -240,21 +248,24 @@ Previous attempts & findings:
     plan = PLANNER_SCHEMA.invoke(plan_raw)
 
     if plan.get("decision") == "stop":
-        step(f"I decided to stop planning because: {plan.get('reason','no reason provided')}.")
+        steps_done += 1
+        step(f"I decided to stop planning because: {plan.get('reason','')}.", steps_done, TOTAL_STEPS)
         if plan.get("candidate"):
-            recommendations.append({"segment": plan["candidate"], "eval": None})
+            recommendations.append({"segment": plan["candidate"], "eval": None})  # placeholder
         break
 
     candidate = plan["candidate"]
     plan_queries = plan["plan"]
 
-    # Research across BUTA (exact messages for each search)
+    # Research across BUTA (now shows exact search messages)
     all_notes_for_round = ""
     for dim in ["Budget","Urgency","Top-3 Fit","Access"]:
-        qlist = plan_queries.get(dim, [])[:2]
-        all_notes_for_round += research_dimension(candidate, dim, qlist, step)
+        # Actually run queries and capture full text (no omissions)
+        all_notes_for_round += research_dimension(candidate, dim, plan_queries.get(dim, [])[:2])
 
-    step(f"I am evaluating the BUTA fit for '{candidate}' using the collected research.")
+    # Evaluate
+    steps_done += 1
+    step(f"I am evaluating the BUTA fit for '{candidate}' using the collected research.", steps_done, TOTAL_STEPS)
 
     eval_input = f"Candidate: {candidate}\n\nResearch notes:\n{all_notes_for_round}"
     eval_raw = LLM.invoke([SystemMessage(content=EVALUATOR_PROMPT), HumanMessage(content=eval_input)])
@@ -264,7 +275,8 @@ Previous attempts & findings:
     recommendations.append({"segment": candidate, "eval": evaluation})
 
     if evaluation["decision"] == "good_fit":
-        step(f"I found a strong fit for '{candidate}'. I will stop iterating and compile the report.")
+        steps_done += 1
+        step(f"I found a strong fit for '{candidate}'. I will stop iterating and compile the report.", steps_done, TOTAL_STEPS)
         break
 
     # Prepare context for next round
@@ -281,9 +293,10 @@ Previous attempts & findings:
 scored_recs = [r for r in recommendations if r["eval"] is not None]
 scored_recs = sorted(scored_recs, key=lambda r: score_eval(r["eval"]), reverse=True)[:2]
 if not scored_recs and recommendations:
+    # In case planner stopped before any research
     scored_recs = recommendations[:1]
 
-# Build evaluations text for final writer
+# Build evaluations text for final writer (still no JSON shown to user)
 evaluations_text = ""
 for rec in scored_recs:
     seg = rec["segment"]
@@ -300,26 +313,27 @@ for rec in scored_recs:
 # Full research notes (EVERYTHING from Tavily kept verbatim)
 full_research_notes = "\n".join([a["notes"] for a in attempts])
 
-# Final writer — narrative only; we will append the full research appendix verbatim
-step("I am compiling the single report with the narrative summary and the complete research appendix.")
+# Final writer — single report with narrative + complete research appendix
+steps_done += 1
+step("I am compiling the single report with the narrative summary and the complete research appendix.", steps_done, TOTAL_STEPS)
 
 final_raw = LLM.invoke([
     SystemMessage(content=FINAL_WRITER_PROMPT.format(
         idea_overview="\n".join(idea_overview_lines),
         evaluations=evaluations_text,
+        full_research_notes=full_research_notes,
     ))
 ])
-narrative_report = final_raw.content
+final_report_text = final_raw.content
 
-# Construct the single full report with verbatim appendix (guarantees nothing is omitted)
-full_report = narrative_report + "\n\n---\n## Research Appendix (verbatim)\n\n" + full_research_notes
-
-# Ensure the progress bar reaches 100%
+# Done — fill progress if ended early
 while steps_done < TOTAL_STEPS:
-    step("Finalizing…")
+    steps_done += 1
+    step("Finalizing…", steps_done, TOTAL_STEPS)
 st.toast("BUTA analysis complete.", icon="✅")
 
 # -------------------------- Single Report Output --------------------------
 st.subheader("Complete BUTA Report")
-st.write(full_report)
+# This single report includes BOTH the narrative summary and the full research appendix.
+st.write(final_report_text)
 
