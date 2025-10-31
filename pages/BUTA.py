@@ -337,3 +337,4 @@ st.subheader("Complete BUTA Report")
 # This single report includes BOTH the narrative summary and the full research appendix.
 st.write(final_report_text)
 
+
