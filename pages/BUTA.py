@@ -16,7 +16,7 @@ from langchain.agents import AgentExecutor, create_openai_tools_agent
 from langchain_community.tools.tavily_search import TavilySearchResults
 
 # -------------------------- App Config --------------------------
-st.set_page_config(page_title="BUTA Beachhead Finder", layout="wide")
+st.set_page_config(page_title="BUTA Beachhead Finder (Simple)", layout="wide")
 
 # Secrets/env
 if not os.environ.get("OPENAI_API_KEY"):
@@ -115,10 +115,12 @@ Return STRICT JSON ONLY:
 """
 
 FINAL_WRITER_PROMPT = """
-Write a clear BUTA summary for the recommended beachhead(s).
-- Use headings and bullets (no code, no JSON).
-- Include ratings and 2–4 key evidence bullets per dimension with source links inline.
-- Conclude with: Go-to-market hypothesis, Key risks, Immediate validation steps.
+Write a single, clean BUTA report that includes:
+1) A concise narrative summary of the best beachhead(s) with ratings.
+2) Evidence bullets (2–4 per dimension) with source links inline.
+3) Go-to-market hypothesis, Key risks, Immediate validation steps.
+
+IMPORTANT: After the narrative, append a complete “Research Appendix” that includes EVERY Tavily query and ALL bullets exactly as gathered (do not omit anything).
 
 Idea overview:
 {idea_overview}
@@ -126,7 +128,10 @@ Idea overview:
 Recommended beachheads with evaluations:
 {evaluations}
 
-Produce a clean, readable report.
+All research notes (full text):
+{full_research_notes}
+
+Produce one readable report (no code or JSON).
 """
 
 # -------------------------- Sidebar Inputs --------------------------
@@ -143,7 +148,7 @@ evidence = st.sidebar.text_area("Evidence/Traction (optional)")
 competitors = st.sidebar.text_area("Known Alternatives/Competitors (optional)")
 constraints = st.sidebar.text_area("Constraints (optional)")
 
-start = st.sidebar.button("Find My Beachhead", type="primary")
+start = st.sidebar.button("Run BUTA", type="primary")
 
 # -------------------------- Helpers --------------------------
 def normalize_urls(text: str) -> List[str]:
@@ -156,139 +161,65 @@ def run_tavily_query(q: str) -> str:
         out = f"- Search error for '{q}': {e}"
     return out
 
-def research_dimension(segment: str, dim: str, queries: List[str], log_list: List[str]) -> str:
+def research_dimension(segment: str, dim: str, queries: List[str]) -> str:
     notes = f"\n=== {segment} :: {dim} ===\n"
     for q in queries:
-        log_list.append(f"Searching ({dim}): {q}")
+        notes += f"Query: {q}\n"
         bullets = run_tavily_query(q)
-        log_list.append(bullets)
-        notes += f"Query: {q}\n{bullets}\n"
+        notes += bullets + "\n"
     return notes
 
-def score_eval(rec: Dict[str,Any]) -> int:
+def score_eval(ev: Dict[str,Any]) -> int:
     rank = {"High":2,"Medium":1,"Low":0}
-    return sum(rank[rec["eval"]["BUTA"][k]["rating"]] for k in ["budget","urgency","top_fit","access"])
+    return sum(rank[ev["BUTA"][k]["rating"]] for k in ["budget","urgency","top_fit","access"])
 
-# -------------------------- UI Layout --------------------------
-st.title("BUTA Beachhead Finder — Iterative & Transparent")
-st.caption("Think → Search → Adapt, with a hard stop at 3 rounds. Live progress and sources included.")
+# -------------------------- UI --------------------------
+st.title("BUTA Beachhead Finder — Simple")
 
-tabs = st.tabs(["Dashboard", "Live Feed", "Final Report", "Reference"])
-
-# Reference tab (no HTML/CSS; uses built-in image component)
-with tabs[3]:
-    st.subheader("BUTA Reference")
-    st.write("B = Budget, U = Urgency, T = Top-3 Fit, A = Access")
-    for p in [
-        "/mnt/data/83246a71-57ac-41b1-b7b2-a189c1564b83.png",
-        "/mnt/data/f4e0e3f7-fb29-40d3-9a15-e6ac9fd54a26.png",
-        "/mnt/data/e6ed0f72-3758-4ab2-9232-2f9bddb29922.png",
-        "/mnt/data/c419f54e-6bd4-4da6-9c8f-839754b71f78.png",
-        "/mnt/data/81b8e7b3-5e9a-4ae1-ba5f-876ebdebd4a0.png",
-    ]:
-        try:
-            st.image(p, use_container_width=True)
-        except Exception:
-            pass
-
-# Guard rails
 if not start:
-    with tabs[0]:
-        st.subheader("How this works")
-        st.write(
-            "1) Enter **Problem** and **Solution** (only required fields). "
-            "2) The agent proposes a specific candidate beachhead and a focused web research plan. "
-            "3) It researches across **B**, **U**, **T**, **A** using Tavily (with sources). "
-            "4) It evaluates and adapts, up to 3 rounds, stopping early on a strong fit. "
-            "5) A compact final report is generated."
-        )
+    st.info("Fill in Problem and Solution, then click **Run BUTA**.")
     st.stop()
 
 if not problem.strip() or not solution.strip():
-    with tabs[0]:
-        st.error("Please fill in both required fields: Problem and Solution.")
+    st.error("Please fill in both required fields: Problem and Solution.")
     st.stop()
 
-# -------------------------- Overview (Dashboard) --------------------------
-with tabs[0]:
-    st.subheader("Idea Overview")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.write(f"**Problem:** {problem}")
-        if industry: st.write(f"**Industry:** {industry}")
-        if buyer_roles: st.write(f"**Buyer/User Roles:** {buyer_roles}")
-        if evidence: st.write(f"**Evidence/Traction:** {evidence}")
-    with col2:
-        st.write(f"**Solution:** {solution}")
-        if target_geos: st.write(f"**Target Geography:** {target_geos}")
-        if price_point: st.write(f"**Price Point:** {price_point}")
-        if competitors: st.write(f"**Known Competitors:** {competitors}")
-    if constraints: st.write(f"**Constraints:** {constraints}")
-    st.divider()
+# -------------------------- Progress Bar + Snippets --------------------------
+snippet = st.empty()
+progress = st.progress(0.0, text="Initializing…")
 
-# -------------------------- Iterative Loop --------------------------
-max_rounds = 3
+def step(msg: str, done: int, total: int):
+    snippet.info(msg)
+    progress.progress(min(done/total, 1.0), text=msg)
+
+# Estimate max steps for up to 3 rounds: plan(1) + research(8) + evaluate(1) per round + final(1)
+MAX_ROUNDS = 3
+TOTAL_STEPS = MAX_ROUNDS * (1 + 8 + 1) + 1
+steps_done = 0
+
+# -------------------------- Overview (kept simple) --------------------------
+idea_overview_lines = [
+    f"Problem: {problem}",
+    f"Solution: {solution}",
+]
+if industry: idea_overview_lines.append(f"Industry: {industry}")
+if target_geos: idea_overview_lines.append(f"Geography: {target_geos}")
+if buyer_roles: idea_overview_lines.append(f"Buyer/User Roles: {buyer_roles}")
+if price_point: idea_overview_lines.append(f"Price Point: {price_point}")
+if evidence: idea_overview_lines.append(f"Evidence/Traction: {evidence}")
+if competitors: idea_overview_lines.append(f"Competitors: {competitors}")
+if constraints: idea_overview_lines.append(f"Constraints: {constraints}")
+
+# -------------------------- Iterative Loop (think → search → adapt) --------------------------
 attempts: List[Dict[str, Any]] = []
 recommendations: List[Dict[str, Any]] = []
-feed: List[str] = []
-
-progress_bar = st.progress(0.0, text="Starting…")
-status_area = st.empty()
 
 previous_attempts_text = ""
-best_so_far_text = st.empty()
-best_metrics_placeholder = st.empty()
-alt_placeholder = st.empty()
 
-def update_best_dashboard():
-    if len(recommendations) == 0:
-        return
-    # Best is first by score
-    best = sorted(recommendations, key=score_eval, reverse=True)[0]
-    seg = best["segment"]
-    ev = best["eval"]["BUTA"]
-    with tabs[0]:
-        best_so_far_text.subheader(f"Current Best Beachhead: {seg}")
-        cols = st.columns(4)
-        map_ = {"High":"🟢 High", "Medium":"🟡 Medium", "Low":"🔵 Low"}
-        cols[0].metric("Budget", map_.get(ev["budget"]["rating"], ev["budget"]["rating"]))
-        cols[1].metric("Urgency", map_.get(ev["urgency"]["rating"], ev["urgency"]["rating"]))
-        cols[2].metric("Top-3 Fit", map_.get(ev["top_fit"]["rating"], ev["top_fit"]["rating"]))
-        cols[3].metric("Access", map_.get(ev["access"]["rating"], ev["access"]["rating"]))
-
-        st.write("Key evidence (sample):")
-        for k in ["budget","urgency","top_fit","access"]:
-            bullets = ev[k]["evidence"][:2]
-            for b in bullets:
-                st.write(f"- {b}")
-
-        st.divider()
-
-    # Alternatives (compact list)
-    with tabs[0]:
-        alt_placeholder.subheader("Alternatives Under Consideration")
-        if len(recommendations) == 1:
-            st.write("No alternatives yet.")
-        else:
-            for rec in sorted(recommendations, key=score_eval, reverse=True)[1:3]:
-                r = rec["eval"]["BUTA"]
-                st.write(
-                    f"- {rec['segment']} | "
-                    f"B:{r['budget']['rating']} U:{r['urgency']['rating']} "
-                    f"T:{r['top_fit']['rating']} A:{r['access']['rating']}"
-                )
-
-# Live feed renderer (latest 10 entries)
-def render_feed():
-    with tabs[1]:
-        st.subheader("Live Research Feed")
-        recent = feed[-10:]
-        for line in recent:
-            st.write(line)
-        st.caption(f"Showing latest {len(recent)} entries. Full log appears in the Final Report tab.")
-
-for round_idx in range(1, max_rounds + 1):
-    progress_bar.progress((round_idx-1)/max_rounds, text=f"Round {round_idx} of {max_rounds}: planning…")
+for round_idx in range(1, MAX_ROUNDS + 1):
+    # Plan
+    steps_done += 1
+    step(f"Round {round_idx}: Planning the next best segment…", steps_done, TOTAL_STEPS)
 
     plan_input = f"""
 Idea:
@@ -305,62 +236,45 @@ Constraints: {constraints}
 Previous attempts & findings:
 {previous_attempts_text}
 """
-    plan_msg = [SystemMessage(content=PLANNER_PROMPT), HumanMessage(content=plan_input)]
-    plan_raw = LLM.invoke(plan_msg)
+    plan_raw = LLM.invoke([SystemMessage(content=PLANNER_PROMPT), HumanMessage(content=plan_input)])
     plan = PLANNER_SCHEMA.invoke(plan_raw)
 
     if plan.get("decision") == "stop":
-        with tabs[1]:
-            st.info(f"Planner decided to stop: {plan.get('reason','')}")
-            if plan.get("candidate"):
-                st.write(f"Best available candidate to present: {plan['candidate']}")
+        steps_done += 1
+        step(f"Planner decided to stop: {plan.get('reason','')}", steps_done, TOTAL_STEPS)
+        if plan.get("candidate"):
+            recommendations.append({"segment": plan["candidate"], "eval": None})  # placeholder
         break
 
     candidate = plan["candidate"]
-    why_this = plan["why_this"]
     plan_queries = plan["plan"]
 
-    with tabs[1]:
-        st.write(f"Candidate to investigate: **{candidate}**")
-        st.write(f"Why this next: {why_this}")
-
-    progress_bar.progress((round_idx-1)/max_rounds, text=f"Round {round_idx}: researching {candidate} …")
-
-    # Research across BUTA
-    round_notes = ""
+    # Research across BUTA (2 queries per dimension)
+    all_notes_for_round = ""
     for dim in ["Budget","Urgency","Top-3 Fit","Access"]:
-        queries = plan_queries.get(dim, [])[:2]
-        feed.append(f"--- {dim} ---")
-        round_notes += research_dimension(candidate, dim, queries, feed)
-        render_feed()
+        for q_idx, q in enumerate(plan_queries.get(dim, [])[:2], start=1):
+            steps_done += 1
+            step(f"Round {round_idx}: {dim} research {q_idx}/2…", steps_done, TOTAL_STEPS)
+        # Actually run queries and capture full text (no omissions)
+        all_notes_for_round += research_dimension(candidate, dim, plan_queries.get(dim, [])[:2])
 
     # Evaluate
-    eval_input = f"Candidate: {candidate}\n\nResearch notes:\n{round_notes}"
-    eval_msg = [SystemMessage(content=EVALUATOR_PROMPT), HumanMessage(content=eval_input)]
-    eval_raw = LLM.invoke(eval_msg)
+    steps_done += 1
+    step(f"Round {round_idx}: Evaluating BUTA fit…", steps_done, TOTAL_STEPS)
+
+    eval_input = f"Candidate: {candidate}\n\nResearch notes:\n{all_notes_for_round}"
+    eval_raw = LLM.invoke([SystemMessage(content=EVALUATOR_PROMPT), HumanMessage(content=eval_input)])
     evaluation = EVALUATOR_SCHEMA.invoke(eval_raw)
 
-    with tabs[0]:
-        st.subheader(f"Round {round_idx} — Preliminary BUTA Scores for: {candidate}")
-        cols = st.columns(4)
-        m = {"High":"🟢 High","Medium":"🟡 Medium","Low":"🔵 Low"}
-        cols[0].metric("Budget", m.get(evaluation["BUTA"]["budget"]["rating"], evaluation["BUTA"]["budget"]["rating"]))
-        cols[1].metric("Urgency", m.get(evaluation["BUTA"]["urgency"]["rating"], evaluation["BUTA"]["urgency"]["rating"]))
-        cols[2].metric("Top-3 Fit", m.get(evaluation["BUTA"]["top_fit"]["rating"], evaluation["BUTA"]["top_fit"]["rating"]))
-        cols[3].metric("Access", m.get(evaluation["BUTA"]["access"]["rating"], evaluation["BUTA"]["access"]["rating"]))
-        st.write(evaluation.get("notes",""))
-        st.divider()
-
-    attempts.append({"segment": candidate, "eval": evaluation, "notes": round_notes})
+    attempts.append({"segment": candidate, "eval": evaluation, "notes": all_notes_for_round})
     recommendations.append({"segment": candidate, "eval": evaluation})
-    update_best_dashboard()
-    render_feed()
 
     if evaluation["decision"] == "good_fit":
-        with tabs[1]:
-            st.success("Strong fit found. Stopping early.")
+        steps_done += 1
+        step("Strong fit found. Stopping early.", steps_done, TOTAL_STEPS)
         break
 
+    # Prepare context for next round
     previous_attempts_text += (
         f"\nAttempt on '{candidate}': "
         f"B:{evaluation['BUTA']['budget']['rating']} "
@@ -369,78 +283,65 @@ Previous attempts & findings:
         f"A:{evaluation['BUTA']['access']['rating']}. "
         f"{evaluation.get('notes','')}\n"
     )
-    progress_bar.progress(round_idx/max_rounds, text=f"Round {round_idx} complete.")
 
-# Select best 1–2 for final
-recommendations = sorted(recommendations, key=score_eval, reverse=True)[:2]
+# Keep the best 1–2 candidates by score
+scored_recs = [r for r in recommendations if r["eval"] is not None]
+scored_recs = sorted(scored_recs, key=lambda r: score_eval(r["eval"]), reverse=True)[:2]
+if not scored_recs and recommendations:
+    # In case planner stopped before any research
+    scored_recs = recommendations[:1]
 
-# -------------------------- Final Report --------------------------
-idea_overview_lines = [
-    f"Problem: {problem}",
-    f"Solution: {solution}",
-]
-if industry: idea_overview_lines.append(f"Industry: {industry}")
-if target_geos: idea_overview_lines.append(f"Geography: {target_geos}")
-if buyer_roles: idea_overview_lines.append(f"Buyer/User Roles: {buyer_roles}")
-if price_point: idea_overview_lines.append(f"Price Point: {price_point}")
-if evidence: idea_overview_lines.append(f"Evidence/Traction: {evidence}")
-if competitors: idea_overview_lines.append(f"Competitors: {competitors}")
-if constraints: idea_overview_lines.append(f"Constraints: {constraints}")
-
+# Build evaluations text for final writer (still no JSON shown to user)
 evaluations_text = ""
-for rec in recommendations:
+for rec in scored_recs:
     seg = rec["segment"]
-    ev = rec["eval"]["BUTA"]
     evaluations_text += f"\nSegment: {seg}\n"
-    for k in ["budget","urgency","top_fit","access"]:
-        evaluations_text += f"- {k.title()} rating: {ev[k]['rating']}\n"
-        for e in ev[k]["evidence"][:3]:
-            evaluations_text += f"  • {e}\n"
-        if ev[k]["sources"]:
-            evaluations_text += "  sources: " + ", ".join(ev[k]["sources"][:4]) + "\n"
+    if rec["eval"] is not None:
+        ev = rec["eval"]["BUTA"]
+        for k in ["budget","urgency","top_fit","access"]:
+            evaluations_text += f"- {k.title()} rating: {ev[k]['rating']}\n"
+            for e in ev[k]["evidence"][:4]:
+                evaluations_text += f"  • {e}\n"
+            if ev[k]["sources"]:
+                evaluations_text += "  sources: " + ", ".join(ev[k]["sources"]) + "\n"
 
-final_msg = [
-    SystemMessage(
-        content=FINAL_WRITER_PROMPT.format(
-            idea_overview="\n".join(idea_overview_lines),
-            evaluations=evaluations_text,
-        )
-    )
-]
-final_raw = LLM.invoke(final_msg)
+# Full research notes (EVERYTHING from Tavily kept verbatim)
+full_research_notes = "\n".join([a["notes"] for a in attempts])
+
+# Final writer — single report with narrative + complete research appendix
+steps_done += 1
+step("Compiling the single report…", steps_done, TOTAL_STEPS)
+
+final_raw = LLM.invoke([
+    SystemMessage(content=FINAL_WRITER_PROMPT.format(
+        idea_overview="\n".join(idea_overview_lines),
+        evaluations=evaluations_text,
+        full_research_notes=full_research_notes,
+    ))
+])
 final_report_text = final_raw.content
 
-with tabs[2]:
-    st.subheader("Final BUTA Report")
-    st.write(final_report_text)
+# Done — fill progress if ended early
+step("Done.", TOTAL_STEPS, TOTAL_STEPS)
+st.toast("BUTA analysis complete.", icon="✅")
 
-    # Full log (optional)
-    st.divider()
-    st.subheader("Full Research Log")
-    full_notes = "\n".join([a["notes"] for a in attempts])
-    st.write(full_notes)
+# -------------------------- Single Report Output --------------------------
+st.subheader("Complete BUTA Report")
+# This single report includes BOTH the narrative summary and the full research appendix.
+st.write(final_report_text)
 
-    # Download buttons
-    st.download_button(
-        "Download Report (.md)",
-        data=final_report_text.encode("utf-8"),
-        file_name="buta_report.md",
-        mime="text/markdown",
-        use_container_width=True,
-    )
-    st.download_button(
-        "Download Full Log (.txt)",
-        data=full_notes.encode("utf-8"),
-        file_name="buta_research_log.txt",
-        mime="text/plain",
-        use_container_width=True,
-    )
-
-# Footer meta
-all_notes = "\n".join([a["notes"] for a in attempts])
-unique_links = normalize_urls(all_notes)
-with tabs[0]:
-    st.caption(
-        f"Method: Iterative BUTA search with GPT-4.1 + Tavily. "
-        f"Rounds run: {len(attempts)}. Unique sources referenced: {len(unique_links)}."
-    )
+# Optional downloads (same single report, plus raw notes)
+st.download_button(
+    "Download Report (.md)",
+    data=final_report_text.encode("utf-8"),
+    file_name="buta_report_full.md",
+    mime="text/markdown",
+    use_container_width=True,
+)
+st.download_button(
+    "Download Raw Research (.txt)",
+    data=full_research_notes.encode("utf-8"),
+    file_name="buta_research_full.txt",
+    mime="text/plain",
+    use_container_width=True,
+)
