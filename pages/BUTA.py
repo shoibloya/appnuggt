@@ -190,7 +190,7 @@ if not run:
         "- **Top-3 Fit** — Are you plausibly a top solution for their job?\n"
         "- **Access** — Can you reach and convert them?"
     )
-    # Reference images (always visible)
+    # Reference images (always visible) — UPDATED PARAM
     for p in [
         "/mnt/data/83246a71-57ac-41b1-b7b2-a189c1564b83.png",
         "/mnt/data/f4e0e3f7-fb29-40d3-9a15-e6ac9fd54a26.png",
@@ -199,7 +199,7 @@ if not run:
         "/mnt/data/81b8e7b3-5e9a-4ae1-ba5f-876ebdebd4a0.png",
     ]:
         try:
-            st.image(p, use_column_width=True)
+            st.image(p, use_container_width=True)
         except Exception:
             pass
     st.stop()
