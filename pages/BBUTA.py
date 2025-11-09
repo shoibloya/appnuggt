@@ -1,9 +1,18 @@
+# =============================================================================
+# BUTA Beachhead Finder — Parallel (Thread-Safe UI, PDF export)
+# =============================================================================
+# Requirements (install at deploy time):
+#   pip install reportlab==3.6.13   # recommended
+#   # optional fallback:
+#   # pip install fpdf2==2.7.9
+# =============================================================================
+
 import os
 import re
 import io
 import time
 from typing import Dict, List, Any, Optional, Tuple
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from queue import Queue, Empty
 
 import streamlit as st
@@ -60,7 +69,7 @@ You are a precise market research analyst. For each search query:
     agent = create_openai_tools_agent(LLM, tools, search_prompt)
     return AgentExecutor(agent=agent, tools=tools, verbose=False)
 
-# -------------------------- Core Prompts (UNCHANGED) --------------------------
+# -------------------------- CORE PROMPTS (DO NOT CHANGE) --------------------------
 PLANNER_SCHEMA = JsonOutputParser()
 PLANNER_PROMPT = """
 You are an iterative beachhead-finder using the BUTA framework:
@@ -139,7 +148,7 @@ All research notes (full text):
 Produce one readable report (no code or JSON).
 """
 
-# -------------------------- New Helper Prompts (non-core) --------------------------
+# -------------------------- Helper Prompts (non-core; safe to edit) --------------------------
 VALIDATOR_SCHEMA = JsonOutputParser()
 VALIDATOR_PROMPT = """
 You validate whether a proposed beachhead segment is concrete and specific.
@@ -173,32 +182,58 @@ Return STRICT JSON ONLY:
 }
 """
 
-# -------------------------- Sidebar Inputs --------------------------
-st.sidebar.header("Your Idea")
+# -------------------------- Sidebar Inputs (ALL REQUIRED) --------------------------
+st.sidebar.header("Your Idea (All fields required)")
 
-problem = st.sidebar.text_area("Problem / Job-to-be-Done (required)")
-solution = st.sidebar.text_area("Your Solution & Differentiators (required)")
+# Instruction block with examples
+st.sidebar.markdown(
+    """
+**How to fill the fields (example):**
 
-industry = st.sidebar.text_input("Industry / Category (optional)")
-target_geos = st.sidebar.text_input("Target Geography (optional)")
-buyer_roles = st.sidebar.text_input("Buyer / User Roles (optional)")
-price_point = st.sidebar.text_input("Expected Price Point (optional)")
-evidence = st.sidebar.text_area("Evidence/Traction (optional)")
-competitors = st.sidebar.text_area("Known Alternatives/Competitors (optional)")
-constraints = st.sidebar.text_area("Constraints (optional)")
+- **Problem / JTBD:**  
+  “E-commerce brands struggle to turn product page visits into purchases.”
+
+- **Solution & Differentiators:**  
+  “An AI CRO assistant that analyzes on-page behavior and generates A/B tests; 1-click deploy; integrates with Shopify and GA4.”
+
+- **Industry / Category:**  
+  “E-commerce conversion optimization” (be specific)
+
+- **Target Geography:**  
+  “United States” (or country/region/state)
+
+- **Buyer / User Roles:**  
+  “Head of Growth; E-commerce Manager”
+
+- **Expected Price Point:**  
+  “$500–$1,500 per month”
+
+- **Competitors:**  
+  “Optimizely, VWO, Google Optimize (legacy), Convert.com”
+
+- **Your Proposed Beachhead (Segment):**  
+  “Mid-sized DTC fashion stores (50–200 SKUs) in the US on Shopify Plus, using GA4 and Klaviyo.”
+    """.strip()
+)
+
+problem = st.sidebar.text_area("Problem / Job-to-be-Done", height=80)
+solution = st.sidebar.text_area("Your Solution & Differentiators", height=100)
+industry = st.sidebar.text_input("Industry / Category")
+target_geos = st.sidebar.text_input("Target Geography")
+buyer_roles = st.sidebar.text_input("Buyer / User Roles")
+price_point = st.sidebar.text_input("Expected Price Point")
+competitors = st.sidebar.text_area("Known Alternatives / Competitors", height=60)
 
 st.sidebar.markdown("---")
-# Multiline beachhead input (per request)
 student_beachhead = st.sidebar.text_area(
-    "Your Proposed Beachhead (optional)",
-    placeholder="e.g., Dental clinics with 2–5 chairs in California using Open Dental",
+    "Your Proposed Beachhead (Segment)",
+    placeholder="e.g., Mid-sized DTC fashion stores (50–200 SKUs) in the US on Shopify Plus, using GA4 and Klaviyo.",
     height=90,
 )
-# Alternative is always ON (no checkbox)
 
 start = st.sidebar.button("Run BUTA", type="primary")
 
-# -------------------------- Helpers --------------------------
+# -------------------------- Small helpers --------------------------
 def normalize_urls(text: str) -> List[str]:
     return list(set(re.findall(r'https?://[\w\.-/%\?\=&\+#]+', text)))
 
@@ -229,8 +264,9 @@ def research_dimension(segment: str, dim: str, queries: List[str],
         notes += bullets + "\n"
     return notes
 
-# PDF builder (ReportLab if available; fallback to Markdown)
+# PDF builder: ReportLab first, fpdf2 fallback
 def build_pdf_from_text(text: str) -> Optional[bytes]:
+    # Try ReportLab
     try:
         from reportlab.lib.pagesizes import A4
         from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
@@ -239,7 +275,9 @@ def build_pdf_from_text(text: str) -> Optional[bytes]:
         from reportlab.lib.units import mm
 
         buf = io.BytesIO()
-        doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=18*mm, rightMargin=18*mm, topMargin=18*mm, bottomMargin=18*mm)
+        doc = SimpleDocTemplate(buf, pagesize=A4,
+                                leftMargin=18*mm, rightMargin=18*mm,
+                                topMargin=18*mm, bottomMargin=18*mm)
         styles = getSampleStyleSheet()
         normal = ParagraphStyle(
             'Body',
@@ -251,10 +289,9 @@ def build_pdf_from_text(text: str) -> Optional[bytes]:
         )
         flow = []
         for line in text.split("\n"):
-            safe = (line
-                    .replace("&", "&amp;")
-                    .replace("<", "&lt;")
-                    .replace(">", "&gt;"))
+            safe = (line.replace("&", "&amp;")
+                        .replace("<", "&lt;")
+                        .replace(">", "&gt;"))
             flow.append(Paragraph(safe, normal))
             flow.append(Spacer(1, 3))
         doc.build(flow)
@@ -262,45 +299,71 @@ def build_pdf_from_text(text: str) -> Optional[bytes]:
         buf.close()
         return pdf_bytes
     except Exception:
+        pass
+
+    # Fallback to fpdf2 (simple layout)
+    try:
+        from fpdf import FPDF
+        pdf = FPDF()
+        pdf.set_auto_page_break(auto=True, margin=12)
+        pdf.add_page()
+        pdf.set_font("helvetica", size=11)
+        content = text.replace("\r\n", "\n")
+        for line in content.split("\n"):
+            if not line.strip():
+                pdf.ln(3)
+            else:
+                pdf.multi_cell(0, 5, line)
+        return pdf.output(dest="S").encode("latin-1", "ignore")
+    except Exception:
         return None
 
-# -------------------------- UI: Title & Pre-flight --------------------------
+# -------------------------- Main UI --------------------------
 st.title("BUTA Beachhead Finder — Parallel")
 
 if not start:
-    st.info("Fill in Problem and Solution, optionally add your proposed beachhead, then click **Run BUTA**.")
+    st.info("Fill in **all** fields on the left, then click **Run BUTA**.")
     st.stop()
 
-if not problem.strip() or not solution.strip():
-    st.error("Please fill in both required fields: Problem and Solution.")
+# Validate that all fields are filled
+required_fields = {
+    "Problem / Job-to-be-Done": problem,
+    "Solution & Differentiators": solution,
+    "Industry / Category": industry,
+    "Target Geography": target_geos,
+    "Buyer / User Roles": buyer_roles,
+    "Expected Price Point": price_point,
+    "Known Alternatives / Competitors": competitors,
+    "Your Proposed Beachhead (Segment)": student_beachhead,
+}
+missing = [k for k, v in required_fields.items() if not v or not v.strip()]
+if missing:
+    st.error("Please fill in all required fields: " + ", ".join(missing))
     st.stop()
 
 # -------------------------- Idea Overview --------------------------
 idea_overview_lines = [
     f"Problem: {problem}",
     f"Solution: {solution}",
+    f"Industry: {industry}",
+    f"Geography: {target_geos}",
+    f"Buyer/User Roles: {buyer_roles}",
+    f"Price Point: {price_point}",
+    f"Competitors: {competitors}",
 ]
-if industry: idea_overview_lines.append(f"Industry: {industry}")
-if target_geos: idea_overview_lines.append(f"Geography: {target_geos}")
-if buyer_roles: idea_overview_lines.append(f"Buyer/User Roles: {buyer_roles}")
-if price_point: idea_overview_lines.append(f"Price Point: {price_point}")
-if evidence: idea_overview_lines.append(f"Evidence/Traction: {evidence}")
-if competitors: idea_overview_lines.append(f"Competitors: {competitors}")
-if constraints: idea_overview_lines.append(f"Constraints: {constraints}")
 
-# -------------------------- Layout: two columns for parallel tracks --------------------------
-left_col, right_col = st.columns(2)
-
-# Build progress UIs (main thread only)
-student_box = left_col.container()
+# -------------------------- Vertical loaders (one below the other) --------------------------
+st.subheader("BUTA Analysis — Your Beachhead")
+student_box = st.container()
 student_prog = student_box.progress(0.0, text="Your Beachhead — Initializing…")
 student_msg = student_box.empty()
 
-alt_box = right_col.container()
+st.subheader("BUTA Analysis — Suggested Alternative")
+alt_box = st.container()
 alt_prog = alt_box.progress(0.0, text="Suggested Alternative — Initializing…")
 alt_msg = alt_box.empty()
 
-# -------------------------- Validation (student beachhead) --------------------------
+# -------------------------- Validation (silent) --------------------------
 validated_student = None
 if student_beachhead.strip():
     validator_raw = LLM.invoke([
@@ -310,43 +373,27 @@ if student_beachhead.strip():
     validator = VALIDATOR_SCHEMA.invoke(validator_raw)
     if validator.get("valid", False):
         validated_student = student_beachhead.strip()
-        left_col.success("✅ Beachhead looks specific enough.")
     else:
         improved = validator.get("improve", "").strip()
-        reasons = validator.get("reasons", [])
-        msg = "⚠️ Your beachhead could be more concrete."
-        if reasons:
-            msg += " Reasons: " + "; ".join(reasons)
-        if improved:
-            msg += f"\nSuggested rewrite: **{improved}**"
-        left_col.info(msg)
         validated_student = improved or student_beachhead.strip()
-else:
-    left_col.warning("No student-proposed beachhead provided. The left track will be skipped.")
 
-# -------------------------- Parallel Workers (NO Streamlit calls inside) --------------------------
-# Totals (keep consistent with event emissions)
+# -------------------------- Workers (NO Streamlit calls inside) --------------------------
 TOTAL_STEPS_STUDENT = 18  # 1 plan + (4 dims * 2 queries * 2 steps) + 1 eval
 MAX_ROUNDS = 3
-TOTAL_STEPS_ALT = MAX_ROUNDS * (1 + (4*2*2) + 1) + 1  # == 55 (incl. finalizing pad)
+TOTAL_STEPS_ALT = MAX_ROUNDS * (1 + (4*2*2) + 1) + 1  # == 55
 
 def student_worker(q: Queue) -> Tuple[Optional[Dict[str,Any]], str, str]:
     """Evaluate student-proposed beachhead with BUTA. Returns (evaluation_json, candidate_name, notes)."""
     def emit(ev: Dict[str, Any]):
         q.put(ev)
 
-    if not validated_student:
-        emit({"type": "step", "done": TOTAL_STEPS_STUDENT, "total": TOTAL_STEPS_STUDENT,
-              "text": "Skipped (no student beachhead provided)."})
-        return None, "", ""
-
     executor = make_search_executor()
     counters = {"done": 0}
 
-    # Plan queries for FIXED candidate
     counters["done"] += 1
     emit({"type": "step", "done": counters["done"], "total": TOTAL_STEPS_STUDENT,
           "text": "Planning Tavily queries for your beachhead…"})
+
     fixed_plan_raw = LLM.invoke([
         SystemMessage(content=FIXED_PLANNER_PROMPT),
         HumanMessage(content=("Overall idea:\n" + "\n".join(idea_overview_lines) +
@@ -355,21 +402,19 @@ def student_worker(q: Queue) -> Tuple[Optional[Dict[str,Any]], str, str]:
     fixed_plan = FIXED_PLANNER_SCHEMA.invoke(fixed_plan_raw)
     plan_queries = fixed_plan.get("plan", {})
 
-    # Research
     all_notes = ""
     for dim in ["Budget","Urgency","Top-3 Fit","Access"]:
         all_notes += research_dimension(validated_student, dim, plan_queries.get(dim, []),
                                         emit, counters, TOTAL_STEPS_STUDENT, executor)
 
-    # Evaluate
     counters["done"] += 1
     emit({"type": "step", "done": counters["done"], "total": TOTAL_STEPS_STUDENT,
           "text": "Evaluating BUTA fit for your beachhead…"})
+
     eval_input = f"Candidate: {validated_student}\n\nResearch notes:\n{all_notes}"
     eval_raw = LLM.invoke([SystemMessage(content=EVALUATOR_PROMPT), HumanMessage(content=eval_input)])
     evaluation = EVALUATOR_SCHEMA.invoke(eval_raw)
 
-    # Pad to 100% if any steps remain
     while counters["done"] < TOTAL_STEPS_STUDENT:
         counters["done"] += 1
         emit({"type": "step", "done": counters["done"], "total": TOTAL_STEPS_STUDENT,
@@ -379,7 +424,7 @@ def student_worker(q: Queue) -> Tuple[Optional[Dict[str,Any]], str, str]:
     return evaluation, validated_student, all_notes
 
 def alternative_worker(q: Queue, student_segment_for_context: Optional[str]) -> Tuple[List[Dict[str,Any]], List[Dict[str,Any]], str]:
-    """Run the original iterative loop to find another beachhead, avoiding duplication with student segment."""
+    """Run the iterative loop to find another beachhead, avoiding duplication with student segment."""
     def emit(ev: Dict[str, Any]):
         q.put(ev)
 
@@ -399,10 +444,10 @@ def alternative_worker(q: Queue, student_segment_for_context: Optional[str]) -> 
     counters = {"done": 0}
 
     for round_idx in range(1, MAX_ROUNDS + 1):
-        # Plan
         counters["done"] += 1
         emit({"type": "step", "done": counters["done"], "total": TOTAL_STEPS_ALT,
               "text": f"Round {round_idx}: Planning the next segment to investigate…"})
+
         plan_input = f"""
 Idea:
 Problem: {problem}
@@ -411,9 +456,7 @@ Industry: {industry}
 Geos: {target_geos}
 Buyer roles: {buyer_roles}
 Price point: {price_point}
-Evidence: {evidence}
 Competitors: {competitors}
-Constraints: {constraints}
 
 Previous attempts & findings:
 {previous_attempts_text}
@@ -436,16 +479,15 @@ Previous attempts & findings:
 
         plan_queries = plan["plan"]
 
-        # Research
         all_notes_for_round = ""
         for dim in ["Budget","Urgency","Top-3 Fit","Access"]:
             all_notes_for_round += research_dimension(candidate, dim, plan_queries.get(dim, []),
                                                       emit, counters, TOTAL_STEPS_ALT, executor)
 
-        # Evaluate
         counters["done"] += 1
         emit({"type": "step", "done": counters["done"], "total": TOTAL_STEPS_ALT,
               "text": f"Evaluating BUTA fit for '{candidate}'…"})
+
         eval_input = f"Candidate: {candidate}\n\nResearch notes:\n{all_notes_for_round}"
         eval_raw = LLM.invoke([SystemMessage(content=EVALUATOR_PROMPT), HumanMessage(content=eval_input)])
         evaluation = EVALUATOR_SCHEMA.invoke(eval_raw)
@@ -468,7 +510,6 @@ Previous attempts & findings:
             f"{evaluation.get('notes','')}\n"
         )
 
-    # Pad to 100%
     while counters["done"] < TOTAL_STEPS_ALT:
         counters["done"] += 1
         emit({"type": "step", "done": counters["done"], "total": TOTAL_STEPS_ALT,
@@ -483,8 +524,7 @@ alt_q: Queue = Queue()
 
 futures = {}
 with ThreadPoolExecutor(max_workers=2) as pool:
-    if validated_student:
-        futures["student"] = pool.submit(student_worker, student_q)
+    futures["student"] = pool.submit(student_worker, student_q)
     futures["alt"] = pool.submit(alternative_worker, alt_q, validated_student)
 
     # Main thread: poll queues and update UI safely
@@ -522,31 +562,22 @@ with ThreadPoolExecutor(max_workers=2) as pool:
         except Empty:
             pass
 
-        # check futures that might be done without sending 'done' (edge cases)
-        for key, fut in futures.items():
-            if key in finished:
-                continue
-            if fut.done():
-                finished.add(key)
-
         time.sleep(0.1)
 
-# Gather results from futures
+# -------------------------- Gather results --------------------------
 student_result: Tuple[Optional[Dict[str,Any]], str, str] = (None, "", "")
 alt_attempts: List[Dict[str,Any]] = []
 alt_recs: List[Dict[str,Any]] = []
 _ = ""
 
-if "student" in futures:
-    student_result = futures["student"].result()
-if "alt" in futures:
-    alt_attempts, alt_recs, _ = futures["alt"].result()
+student_result = futures["student"].result()
+alt_attempts, alt_recs, _ = futures["alt"].result()
 
-# -------------------------- Combine results & compile final report --------------------------
+# Combine
 attempts_all: List[Dict[str, Any]] = []
 recommendations: List[Dict[str, Any]] = []
 
-# Student track
+# Student track (always present)
 student_eval_json, student_segment_name, student_notes = student_result
 if student_eval_json and student_segment_name:
     attempts_all.append({"segment": student_segment_name, "eval": student_eval_json, "notes": student_notes})
@@ -563,7 +594,7 @@ scored_recs = [r for r in recommendations if r["eval"] is not None]
 scored_recs = sorted(scored_recs, key=_scored, reverse=True)
 top_recs: List[Dict[str,Any]] = []
 
-# Ensure student beachhead stays if present
+# Always include user's beachhead if available
 if student_eval_json and student_segment_name:
     top_recs.append({"segment": student_segment_name, "eval": student_eval_json})
 for r in scored_recs:
@@ -575,7 +606,7 @@ for r in scored_recs:
 if not top_recs and recommendations:
     top_recs = recommendations[:1]
 
-# Build evaluations text for final writer
+# Build evaluations text for final writer (no Markdown shown to user, used only for PDF content)
 evaluations_text = ""
 for rec in top_recs:
     seg = rec["segment"]
@@ -592,7 +623,7 @@ for rec in top_recs:
 # Full research notes (EVERYTHING from Tavily kept verbatim)
 full_research_notes = "\n".join([a["notes"] for a in attempts_all])
 
-st.toast("Compiling report…", icon="🧩")
+# Final writer — single report (NOT displayed; used for PDF)
 final_raw = LLM.invoke([
     SystemMessage(content=FINAL_WRITER_PROMPT.format(
         idea_overview="\n".join(idea_overview_lines),
@@ -602,31 +633,17 @@ final_raw = LLM.invoke([
 ])
 final_report_text = final_raw.content
 
-st.success("BUTA analysis complete. See the combined report below.", icon="✅")
-st.subheader("Complete BUTA Report")
-st.write(final_report_text)
-
-# -------------------------- Downloads --------------------------
-st.markdown("### Download")
+# -------------------------- Download (PDF ONLY) --------------------------
 pdf_bytes = build_pdf_from_text(final_report_text)
-col_a, col_b = st.columns(2)
-
-with col_a:
-    if pdf_bytes:
-        st.download_button(
-            label="Download PDF",
-            data=pdf_bytes,
-            file_name="buta_report.pdf",
-            mime="application/pdf",
-            type="primary",
-        )
-    else:
-        st.warning("PDF generation library not available. Please use the Markdown download instead.")
-
-with col_b:
+st.markdown("---")
+if pdf_bytes:
     st.download_button(
-        label="Download Markdown",
-        data=final_report_text.encode("utf-8"),
-        file_name="buta_report.md",
-        mime="text/markdown",
+        label="Download BUTA Report (PDF)",
+        data=pdf_bytes,
+        file_name="buta_report.pdf",
+        mime="application/pdf",
+        type="primary",
+        help="If this button fails to download, ensure the dependency is installed: pip install reportlab==3.6.13 (or fpdf2==2.7.9).",
     )
+else:
+    st.error("PDF generation failed. Please install: pip install reportlab==3.6.13 (or fpdf2==2.7.9) and rerun.")
