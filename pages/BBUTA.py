@@ -20,7 +20,27 @@ from langchain_core.prompts import (
     ChatPromptTemplate, PromptTemplate,
     SystemMessagePromptTemplate, HumanMessagePromptTemplate, MessagesPlaceholder
 )
-from langchain.agents import AgentExecutor, create_openai_tools_agent
+
+# --- LangChain Agents API compatibility (handles older/newer versions) ---
+try:
+    # Newer common path
+    from langchain.agents import AgentExecutor, create_openai_tools_agent
+except ImportError:
+    # Fallbacks for envs where symbols moved
+    try:
+        from langchain.agents.agent import AgentExecutor  # old path
+    except Exception as _:
+        AgentExecutor = None  # will assert below
+
+    try:
+        # In some versions create_openai_tools_agent is named create_tool_calling_agent
+        from langchain.agents import create_tool_calling_agent as create_openai_tools_agent
+    except Exception as _:
+        raise ImportError(
+            "LangChain agents API not found. Please upgrade/downgrade langchain to a version with "
+            "`AgentExecutor` and `create_openai_tools_agent` (or `create_tool_calling_agent`)."
+        )
+
 from langchain_community.tools.tavily_search import TavilySearchResults
 
 # -------------------------- App Config --------------------------
@@ -37,6 +57,7 @@ LLM = ChatOpenAI(model="gpt-4.1", temperature=0)
 
 def make_search_executor() -> AgentExecutor:
     """Create a fresh agent executor (thread-safe usage)."""
+    assert AgentExecutor is not None, "AgentExecutor class unavailable in this LangChain version."
     tavily_tool = TavilySearchResults(
         max_results=3,
         include_answer=True,
