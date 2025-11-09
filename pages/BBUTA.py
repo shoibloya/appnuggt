@@ -1,7 +1,7 @@
 # =============================================================================
 # BUTA Beachhead Finder — Parallel (Thread-Safe UI, PDF export)
 # =============================================================================
-# Requirements (install at deploy time):
+# Requirements (install before deploy/run for working PDF download):
 #   pip install reportlab==3.6.13   # recommended
 #   # optional fallback:
 #   # pip install fpdf2==2.7.9
@@ -183,38 +183,7 @@ Return STRICT JSON ONLY:
 """
 
 # -------------------------- Sidebar Inputs (ALL REQUIRED) --------------------------
-st.sidebar.header("Your Idea (All fields required)")
-
-# Instruction block with examples
-st.sidebar.markdown(
-    """
-**How to fill the fields (example):**
-
-- **Problem / JTBD:**  
-  “E-commerce brands struggle to turn product page visits into purchases.”
-
-- **Solution & Differentiators:**  
-  “An AI CRO assistant that analyzes on-page behavior and generates A/B tests; 1-click deploy; integrates with Shopify and GA4.”
-
-- **Industry / Category:**  
-  “E-commerce conversion optimization” (be specific)
-
-- **Target Geography:**  
-  “United States” (or country/region/state)
-
-- **Buyer / User Roles:**  
-  “Head of Growth; E-commerce Manager”
-
-- **Expected Price Point:**  
-  “$500–$1,500 per month”
-
-- **Competitors:**  
-  “Optimizely, VWO, Google Optimize (legacy), Convert.com”
-
-- **Your Proposed Beachhead (Segment):**  
-  “Mid-sized DTC fashion stores (50–200 SKUs) in the US on Shopify Plus, using GA4 and Klaviyo.”
-    """.strip()
-)
+st.sidebar.header("Fill All Fields")
 
 problem = st.sidebar.text_area("Problem / Job-to-be-Done", height=80)
 solution = st.sidebar.text_area("Your Solution & Differentiators", height=100)
@@ -321,8 +290,53 @@ def build_pdf_from_text(text: str) -> Optional[bytes]:
 # -------------------------- Main UI --------------------------
 st.title("BUTA Beachhead Finder — Parallel")
 
+# Detailed instructions (MAIN AREA). They disappear once Run is clicked.
 if not start:
-    st.info("Fill in **all** fields on the left, then click **Run BUTA**.")
+    st.markdown(
+        """
+### How this app works
+
+You’ll provide your startup idea and a **specific** proposed beachhead segment.  
+When you click **Run BUTA**, the app:
+1. Runs a **BUTA Analysis on your beachhead** (Budget, Urgency, Top-3 Fit, Access).
+2. In parallel, researches a **Suggested Alternative beachhead** (avoids duplicating your segment).
+3. Compiles a single report with a narrative summary, inline evidence with links, and a complete Research Appendix.
+4. Lets you **download the full report as a PDF**.
+
+#### What to enter (be precise)
+
+- **Problem / Job-to-be-Done**  
+  Example: *“E-commerce brands struggle to convert product page visits into purchases.”*  
+  Not: *“Low conversions.”* (too vague)
+
+- **Solution & Differentiators**  
+  Example: *“AI CRO assistant that analyzes on-page behavior, generates A/B tests, 1-click deploy, integrates with Shopify + GA4.”*
+
+- **Industry / Category**  
+  Example: *“E-commerce conversion optimization.”*
+
+- **Target Geography**  
+  Example: *“United States.”* (or specify country/region/state)
+
+- **Buyer / User Roles**  
+  Example: *“Head of Growth; E-commerce Manager.”*
+
+- **Expected Price Point**  
+  Example: *“$500–$1,500 per month.”*
+
+- **Known Alternatives / Competitors**  
+  Example: *“Optimizely, VWO, Convert.com.”*
+
+- **Your Proposed Beachhead (Segment)**  
+  **Good:** *“Mid-sized DTC fashion stores (50–200 SKUs) in the US on Shopify Plus, using GA4 and Klaviyo.”*  
+  **Bad:** *“Shopify stores.”* (too broad)
+
+> **PDF export dependency:** make sure your environment has  
+> `pip install reportlab==3.6.13` *(or)* `pip install fpdf2==2.7.9`.
+
+When ready, fill all fields in the left panel and click **Run BUTA**.
+        """.strip()
+    )
     st.stop()
 
 # Validate that all fields are filled
@@ -353,29 +367,27 @@ idea_overview_lines = [
 ]
 
 # -------------------------- Vertical loaders (one below the other) --------------------------
-st.subheader("BUTA Analysis — Your Beachhead")
+st.subheader("BUTA Analysis — **User's Beachhead**")
 student_box = st.container()
-student_prog = student_box.progress(0.0, text="Your Beachhead — Initializing…")
+student_prog = student_box.progress(0.0, text="User's Beachhead — Initializing…")
 student_msg = student_box.empty()
 
-st.subheader("BUTA Analysis — Suggested Alternative")
+st.subheader("BUTA Analysis — **Suggested Alternative**")
 alt_box = st.container()
 alt_prog = alt_box.progress(0.0, text="Suggested Alternative — Initializing…")
 alt_msg = alt_box.empty()
 
-# -------------------------- Validation (silent) --------------------------
-validated_student = None
-if student_beachhead.strip():
+# -------------------------- Validation (silent; no banners) --------------------------
+validated_student = student_beachhead.strip()
+if validated_student:
     validator_raw = LLM.invoke([
         SystemMessage(content=VALIDATOR_PROMPT),
-        HumanMessage(content=f"Proposed beachhead: {student_beachhead}\n\nIdea context:\n" + "\n".join(idea_overview_lines))
+        HumanMessage(content=f"Proposed beachhead: {validated_student}\n\nIdea context:\n" + "\n".join(idea_overview_lines))
     ])
     validator = VALIDATOR_SCHEMA.invoke(validator_raw)
-    if validator.get("valid", False):
-        validated_student = student_beachhead.strip()
-    else:
+    if not validator.get("valid", False):
         improved = validator.get("improve", "").strip()
-        validated_student = improved or student_beachhead.strip()
+        validated_student = improved or validated_student
 
 # -------------------------- Workers (NO Streamlit calls inside) --------------------------
 TOTAL_STEPS_STUDENT = 18  # 1 plan + (4 dims * 2 queries * 2 steps) + 1 eval
@@ -383,7 +395,7 @@ MAX_ROUNDS = 3
 TOTAL_STEPS_ALT = MAX_ROUNDS * (1 + (4*2*2) + 1) + 1  # == 55
 
 def student_worker(q: Queue) -> Tuple[Optional[Dict[str,Any]], str, str]:
-    """Evaluate student-proposed beachhead with BUTA. Returns (evaluation_json, candidate_name, notes)."""
+    """Evaluate user's beachhead with BUTA. Returns (evaluation_json, candidate_name, notes)."""
     def emit(ev: Dict[str, Any]):
         q.put(ev)
 
@@ -392,7 +404,7 @@ def student_worker(q: Queue) -> Tuple[Optional[Dict[str,Any]], str, str]:
 
     counters["done"] += 1
     emit({"type": "step", "done": counters["done"], "total": TOTAL_STEPS_STUDENT,
-          "text": "Planning Tavily queries for your beachhead…"})
+          "text": "Planning Tavily queries for the user's beachhead…"})
 
     fixed_plan_raw = LLM.invoke([
         SystemMessage(content=FIXED_PLANNER_PROMPT),
@@ -409,7 +421,7 @@ def student_worker(q: Queue) -> Tuple[Optional[Dict[str,Any]], str, str]:
 
     counters["done"] += 1
     emit({"type": "step", "done": counters["done"], "total": TOTAL_STEPS_STUDENT,
-          "text": "Evaluating BUTA fit for your beachhead…"})
+          "text": "Evaluating BUTA fit for the user's beachhead…"})
 
     eval_input = f"Candidate: {validated_student}\n\nResearch notes:\n{all_notes}"
     eval_raw = LLM.invoke([SystemMessage(content=EVALUATOR_PROMPT), HumanMessage(content=eval_input)])
@@ -424,7 +436,7 @@ def student_worker(q: Queue) -> Tuple[Optional[Dict[str,Any]], str, str]:
     return evaluation, validated_student, all_notes
 
 def alternative_worker(q: Queue, student_segment_for_context: Optional[str]) -> Tuple[List[Dict[str,Any]], List[Dict[str,Any]], str]:
-    """Run the iterative loop to find another beachhead, avoiding duplication with student segment."""
+    """Iterative loop to find another beachhead, avoiding duplication with user's segment."""
     def emit(ev: Dict[str, Any]):
         q.put(ev)
 
@@ -438,7 +450,7 @@ def alternative_worker(q: Queue, student_segment_for_context: Optional[str]) -> 
         previous_attempts_text += (
             f"Attempt on '{student_segment_for_context}': "
             f"B:Unknown U:Unknown T:Unknown A:Unknown. "
-            f"This was student-proposed; avoid proposing the same or closely overlapping segment.\n"
+            f"This was user-proposed; avoid proposing the same or closely overlapping segment.\n"
         )
 
     counters = {"done": 0}
@@ -446,7 +458,7 @@ def alternative_worker(q: Queue, student_segment_for_context: Optional[str]) -> 
     for round_idx in range(1, MAX_ROUNDS + 1):
         counters["done"] += 1
         emit({"type": "step", "done": counters["done"], "total": TOTAL_STEPS_ALT,
-              "text": f"Round {round_idx}: Planning the next segment to investigate…"})
+              "text": f"Round {round_idx}: Planning the next alternative segment…"})
 
         plan_input = f"""
 Idea:
@@ -577,7 +589,7 @@ alt_attempts, alt_recs, _ = futures["alt"].result()
 attempts_all: List[Dict[str, Any]] = []
 recommendations: List[Dict[str, Any]] = []
 
-# Student track (always present)
+# User (student) track
 student_eval_json, student_segment_name, student_notes = student_result
 if student_eval_json and student_segment_name:
     attempts_all.append({"segment": student_segment_name, "eval": student_eval_json, "notes": student_notes})
@@ -606,7 +618,7 @@ for r in scored_recs:
 if not top_recs and recommendations:
     top_recs = recommendations[:1]
 
-# Build evaluations text for final writer (no Markdown shown to user, used only for PDF content)
+# Build evaluations text for final writer (NOT displayed; only for PDF)
 evaluations_text = ""
 for rec in top_recs:
     seg = rec["segment"]
@@ -643,7 +655,7 @@ if pdf_bytes:
         file_name="buta_report.pdf",
         mime="application/pdf",
         type="primary",
-        help="If this button fails to download, ensure the dependency is installed: pip install reportlab==3.6.13 (or fpdf2==2.7.9).",
+        help="If this fails, install: pip install reportlab==3.6.13 (or fpdf2==2.7.9).",
     )
 else:
     st.error("PDF generation failed. Please install: pip install reportlab==3.6.13 (or fpdf2==2.7.9) and rerun.")
