@@ -1,11 +1,6 @@
 # =============================================================================
 # BUTA Beachhead Finder — Parallel (Thread-Safe UI, PDF export)
 # =============================================================================
-# Requirements (install before deploy/run for working PDF download):
-#   pip install reportlab==3.6.13   # recommended
-#   # optional fallback:
-#   # pip install fpdf2==2.7.9
-# =============================================================================
 
 import os
 import re
@@ -331,9 +326,6 @@ When you click **Run BUTA**, the app:
   **Good:** *“Mid-sized DTC fashion stores (50–200 SKUs) in the US on Shopify Plus, using GA4 and Klaviyo.”*  
   **Bad:** *“Shopify stores.”* (too broad)
 
-> **PDF export dependency:** make sure your environment has  
-> `pip install reportlab==3.6.13` *(or)* `pip install fpdf2==2.7.9`.
-
 When ready, fill all fields in the left panel and click **Run BUTA**.
         """.strip()
     )
@@ -655,7 +647,6 @@ if pdf_bytes:
         file_name="buta_report.pdf",
         mime="application/pdf",
         type="primary",
-        help="If this fails, install: pip install reportlab==3.6.13 (or fpdf2==2.7.9).",
     )
 else:
-    st.error("PDF generation failed. Please install: pip install reportlab==3.6.13 (or fpdf2==2.7.9) and rerun.")
+    st.error("PDF generation failed.")
