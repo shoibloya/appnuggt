@@ -5,3 +5,4 @@ langchain-openai
 tavily-python
 langchain-community
 langchain-core
+reportlab
