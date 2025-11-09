@@ -1,6 +1,14 @@
+# =============================================================================
+# BUTA Beachhead Finder — Parallel (Thread-Safe UI, PDF export)
+# =============================================================================
+
 import os
 import re
-from typing import Dict, List, Any
+import io
+import time
+from typing import Dict, List, Any, Optional, Tuple
+from concurrent.futures import ThreadPoolExecutor
+from queue import Queue, Empty
 
 import streamlit as st
 
@@ -16,7 +24,7 @@ from langchain.agents import AgentExecutor, create_openai_tools_agent
 from langchain_community.tools.tavily_search import TavilySearchResults
 
 # -------------------------- App Config --------------------------
-st.set_page_config(page_title="BUTA Beachhead Finder (Simple)", layout="wide")
+st.set_page_config(page_title="BUTA Beachhead Finder (Parallel Mode)", layout="wide")
 
 # Secrets/env
 if not os.environ.get("OPENAI_API_KEY"):
@@ -27,15 +35,16 @@ if not os.environ.get("TAVILY_API_KEY"):
 # -------------------------- LLM & Tools --------------------------
 LLM = ChatOpenAI(model="gpt-4.1", temperature=0)
 
-TAVILY_TOOL = TavilySearchResults(
-    max_results=3,
-    include_answer=True,
-    include_raw_content=True,
-    search_depth="advanced",
-)
-TOOLS = [TAVILY_TOOL]
-
-SEARCH_AGENT_SYSTEM = """
+def make_search_executor() -> AgentExecutor:
+    """Create a fresh agent executor (thread-safe usage)."""
+    tavily_tool = TavilySearchResults(
+        max_results=3,
+        include_answer=True,
+        include_raw_content=True,
+        search_depth="advanced",
+    )
+    tools = [tavily_tool]
+    search_system = """
 You are a precise market research analyst. For each search query:
 - Use the Tavily tool to gather recent, credible facts.
 - Return 3–6 short bullets.
@@ -44,18 +53,18 @@ You are a precise market research analyst. For each search query:
 - If evidence is mixed or uncertain, say so explicitly and still cite a source.
 - No fluff. Facts only.
 """
-search_prompt = ChatPromptTemplate(
-    input_variables=["agent_scratchpad","input"],
-    messages=[
-        SystemMessagePromptTemplate(prompt=PromptTemplate(input_variables=[], template=SEARCH_AGENT_SYSTEM)),
-        HumanMessagePromptTemplate(prompt=PromptTemplate(input_variables=["input"], template="{input}")),
-        MessagesPlaceholder(variable_name="agent_scratchpad"),
-    ],
-)
-SEARCH_AGENT = create_openai_tools_agent(LLM, TOOLS, search_prompt)
-EXECUTOR = AgentExecutor(agent=SEARCH_AGENT, tools=TOOLS, verbose=False)
+    search_prompt = ChatPromptTemplate(
+        input_variables=["agent_scratchpad","input"],
+        messages=[
+            SystemMessagePromptTemplate(prompt=PromptTemplate(input_variables=[], template=search_system)),
+            HumanMessagePromptTemplate(prompt=PromptTemplate(input_variables=["input"], template="{input}")),
+            MessagesPlaceholder(variable_name="agent_scratchpad"),
+        ],
+    )
+    agent = create_openai_tools_agent(LLM, tools, search_prompt)
+    return AgentExecutor(agent=agent, tools=tools, verbose=False)
 
-# -------------------------- Prompts --------------------------
+# -------------------------- CORE PROMPTS (DO NOT CHANGE) --------------------------
 PLANNER_SCHEMA = JsonOutputParser()
 PLANNER_PROMPT = """
 You are an iterative beachhead-finder using the BUTA framework:
@@ -134,102 +143,314 @@ All research notes (full text):
 Produce one readable report (no code or JSON).
 """
 
-# -------------------------- Sidebar Inputs --------------------------
-st.sidebar.header("Your Idea")
+# -------------------------- Helper Prompts (non-core; safe to edit) --------------------------
+VALIDATOR_SCHEMA = JsonOutputParser()
+VALIDATOR_PROMPT = """
+You validate whether a proposed beachhead segment is concrete and specific.
 
-problem = st.sidebar.text_area("Problem / Job-to-be-Done (required)")
-solution = st.sidebar.text_area("Your Solution & Differentiators (required)")
+A good beachhead includes:
+- WHO (industry/role/company type/size),
+- WHERE (geo, if applicable),
+- CONTEXT/STACK (tooling/platform/regulatory or other qualifying attributes).
 
-industry = st.sidebar.text_input("Industry / Category (optional)")
-target_geos = st.sidebar.text_input("Target Geography (optional)")
-buyer_roles = st.sidebar.text_input("Buyer / User Roles (optional)")
-price_point = st.sidebar.text_input("Expected Price Point (optional)")
-evidence = st.sidebar.text_area("Evidence/Traction (optional)")
-competitors = st.sidebar.text_area("Known Alternatives/Competitors (optional)")
-constraints = st.sidebar.text_area("Constraints (optional)")
+Return STRICT JSON ONLY:
+{
+  "valid": true|false,
+  "reasons": ["short reason 1", "short reason 2"],
+  "improve": "rewrite as a crisper, concrete segment"
+}
+"""
+
+FIXED_PLANNER_SCHEMA = JsonOutputParser()
+FIXED_PLANNER_PROMPT = """
+Given the overall idea and a FIXED candidate segment, produce a Tavily query plan with 2 queries per BUTA dimension.
+Return STRICT JSON ONLY:
+
+{
+  "candidate": "exact candidate echoed",
+  "plan": {
+    "Budget": ["q1","q2"],
+    "Urgency": ["q1","q2"],
+    "Top-3 Fit": ["q1","q2"],
+    "Access": ["q1","q2"]
+  }
+}
+"""
+
+# -------------------------- Sidebar Inputs (ALL REQUIRED) --------------------------
+st.sidebar.header("Fill All Fields")
+
+problem = st.sidebar.text_area("Problem / Job-to-be-Done", height=80)
+solution = st.sidebar.text_area("Your Solution & Differentiators", height=100)
+industry = st.sidebar.text_input("Industry / Category")
+target_geos = st.sidebar.text_input("Target Geography")
+buyer_roles = st.sidebar.text_input("Buyer / User Roles")
+price_point = st.sidebar.text_input("Expected Price Point")
+competitors = st.sidebar.text_area("Known Alternatives / Competitors", height=60)
+
+st.sidebar.markdown("---")
+student_beachhead = st.sidebar.text_area(
+    "Your Proposed Beachhead (Segment)",
+    placeholder="e.g., Mid-sized DTC fashion stores (50–200 SKUs) in the US on Shopify Plus, using GA4 and Klaviyo.",
+    height=90,
+)
 
 start = st.sidebar.button("Run BUTA", type="primary")
 
-# -------------------------- Helpers --------------------------
+# -------------------------- Small helpers --------------------------
 def normalize_urls(text: str) -> List[str]:
     return list(set(re.findall(r'https?://[\w\.-/%\?\=&\+#]+', text)))
 
-def run_tavily_query(q: str) -> str:
+def run_tavily_query(executor: AgentExecutor, q: str) -> str:
     try:
-        out = EXECUTOR.invoke({"input": q})["output"]
+        out = executor.invoke({"input": q})["output"]
     except Exception as e:
         out = f"- Search error for '{q}': {e}"
     return out
-
-def research_dimension(segment: str, dim: str, queries: List[str]) -> str:
-    # Detailed snippet updates for exact queries
-    global steps_done, TOTAL_STEPS
-    notes = f"\n=== {segment} :: {dim} ===\n"
-    for q in queries:
-        steps_done += 1
-        step(f"I am searching for '{q}'.", steps_done, TOTAL_STEPS)
-        bullets = run_tavily_query(q)
-        steps_done += 1
-        step(f"I finished searching for '{q}'.", steps_done, TOTAL_STEPS)
-        notes += f"Query: {q}\n"
-        notes += bullets + "\n"
-    return notes
 
 def score_eval(ev: Dict[str,Any]) -> int:
     rank = {"High":2,"Medium":1,"Low":0}
     return sum(rank[ev["BUTA"][k]["rating"]] for k in ["budget","urgency","top_fit","access"])
 
-# -------------------------- UI --------------------------
-st.title("BUTA Beachhead Finder — Simple")
+def research_dimension(segment: str, dim: str, queries: List[str],
+                       emit, counters: Dict[str,int], total_steps: int,
+                       executor: AgentExecutor) -> str:
+    notes = f"\n=== {segment} :: {dim} ===\n"
+    for q in queries[:2]:
+        counters["done"] += 1
+        emit({"type": "step", "done": counters["done"], "total": total_steps,
+              "text": f"[{segment}] Searching: '{q}'"})
+        bullets = run_tavily_query(executor, q)
+        counters["done"] += 1
+        emit({"type": "step", "done": counters["done"], "total": total_steps,
+              "text": f"[{segment}] Finished: '{q}'"})
+        notes += f"Query: {q}\n"
+        notes += bullets + "\n"
+    return notes
 
+# PDF builder (kept for potential future use, not used for UI here)
+def build_pdf_from_text(text: str) -> Optional[bytes]:
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.enums import TA_LEFT
+        from reportlab.lib.units import mm
+
+        buf = io.BytesIO()
+        doc = SimpleDocTemplate(buf, pagesize=A4,
+                                leftMargin=18*mm, rightMargin=18*mm,
+                                topMargin=18*mm, bottomMargin=18*mm)
+        styles = getSampleStyleSheet()
+        normal = ParagraphStyle(
+            'Body',
+            parent=styles['Normal'],
+            alignment=TA_LEFT,
+            fontName='Helvetica',
+            fontSize=10,
+            leading=14,
+        )
+        flow = []
+        for line in text.split("\n"):
+            safe = (line.replace("&", "&amp;")
+                        .replace("<", "&lt;")
+                        .replace(">", "&gt;"))
+            flow.append(Paragraph(safe, normal))
+            flow.append(Spacer(1, 3))
+        doc.build(flow)
+        pdf_bytes = buf.getvalue()
+        buf.close()
+        return pdf_bytes
+    except Exception:
+        pass
+
+    try:
+        from fpdf import FPDF
+        pdf = FPDF()
+        pdf.set_auto_page_break(auto=True, margin=12)
+        pdf.add_page()
+        pdf.set_font("helvetica", size=11)
+        content = text.replace("\r\n", "\n")
+        for line in content.split("\n"):
+            if not line.strip():
+                pdf.ln(3)
+            else:
+                pdf.multi_cell(0, 5, line)
+        return pdf.output(dest="S").encode("latin-1", "ignore")
+    except Exception:
+        return None
+
+# -------------------------- Main UI --------------------------
+st.title("BUTA Beachhead Finder — Parallel")
+
+# Detailed instructions (MAIN AREA). They disappear once Run is clicked.
 if not start:
-    st.info("Fill in Problem and Solution, then click **Run BUTA**.")
+    st.markdown(
+        """
+### How this app works
+
+You’ll provide your startup idea and a **specific** proposed beachhead segment.  
+When you click **Run BUTA**, the app:
+1. Runs a **BUTA Analysis on your beachhead** (Budget, Urgency, Top-3 Fit, Access).
+2. In parallel, researches a **Suggested Alternative beachhead** (avoids duplicating your segment).
+3. Compiles a single report with a narrative summary, inline evidence with links, and a complete Research Appendix.
+4. Lets you **download the full report as a PDF**.
+
+#### What to enter (be precise)
+
+- **Problem / Job-to-be-Done**  
+  Example: *“E-commerce brands struggle to convert product page visits into purchases.”*  
+  Not: *“Low conversions.”* (too vague)
+
+- **Solution & Differentiators**  
+  Example: *“AI CRO assistant that analyzes on-page behavior, generates A/B tests, 1-click deploy, integrates with Shopify + GA4.”*
+
+- **Industry / Category**  
+  Example: *“E-commerce conversion optimization.”*
+
+- **Target Geography**  
+  Example: *“United States.”* (or specify country/region/state)
+
+- **Buyer / User Roles**  
+  Example: *“Head of Growth; E-commerce Manager.”*
+
+- **Expected Price Point**  
+  Example: *“$500–$1,500 per month.”*
+
+- **Known Alternatives / Competitors**  
+  Example: *“Optimizely, VWO, Convert.com.”*
+
+- **Your Proposed Beachhead (Segment)**  
+  **Good:** *“Mid-sized DTC fashion stores (50–200 SKUs) in the US on Shopify Plus, using GA4 and Klaviyo.”*  
+  **Bad:** *“Shopify stores.”* (too broad)
+
+When ready, fill all fields in the left panel and click **Run BUTA**.
+        """.strip()
+    )
     st.stop()
 
-if not problem.strip() or not solution.strip():
-    st.error("Please fill in both required fields: Problem and Solution.")
+# Validate that all fields are filled
+required_fields = {
+    "Problem / Job-to-be-Done": problem,
+    "Solution & Differentiators": solution,
+    "Industry / Category": industry,
+    "Target Geography": target_geos,
+    "Buyer / User Roles": buyer_roles,
+    "Expected Price Point": price_point,
+    "Known Alternatives / Competitors": competitors,
+    "Your Proposed Beachhead (Segment)": student_beachhead,
+}
+missing = [k for k, v in required_fields.items() if not v or not v.strip()]
+if missing:
+    st.error("Please fill in all required fields: " + ", ".join(missing))
     st.stop()
 
-# -------------------------- Progress Bar + Snippets --------------------------
-snippet = st.empty()
-progress = st.progress(0.0, text="Initializing…")
-
-def step(msg: str, done: int, total: int):
-    snippet.info(msg)
-    progress.progress(min(done/total, 1.0), text=msg)
-
-# Updated total to account for per-query start/finish messages:
-# per round: 1 (plan) + 4 dims * 2 queries * 2 steps (start+finish) = 16 + 1 evaluate = 18
-# 3 rounds => 54 + 1 final compile => 55
-MAX_ROUNDS = 3
-TOTAL_STEPS = MAX_ROUNDS * (1 + (4*2*2) + 1) + 1
-steps_done = 0
-
-# -------------------------- Overview (kept simple) --------------------------
+# -------------------------- Idea Overview --------------------------
 idea_overview_lines = [
     f"Problem: {problem}",
     f"Solution: {solution}",
+    f"Industry: {industry}",
+    f"Geography: {target_geos}",
+    f"Buyer/User Roles: {buyer_roles}",
+    f"Price Point: {price_point}",
+    f"Competitors: {competitors}",
 ]
-if industry: idea_overview_lines.append(f"Industry: {industry}")
-if target_geos: idea_overview_lines.append(f"Geography: {target_geos}")
-if buyer_roles: idea_overview_lines.append(f"Buyer/User Roles: {buyer_roles}")
-if price_point: idea_overview_lines.append(f"Price Point: {price_point}")
-if evidence: idea_overview_lines.append(f"Evidence/Traction: {evidence}")
-if competitors: idea_overview_lines.append(f"Competitors: {competitors}")
-if constraints: idea_overview_lines.append(f"Constraints: {constraints}")
 
-# -------------------------- Iterative Loop (think → search → adapt) --------------------------
-attempts: List[Dict[str, Any]] = []
-recommendations: List[Dict[str, Any]] = []
+# -------------------------- Vertical loaders (one below the other) --------------------------
+st.subheader("BUTA Analysis — **User's Beachhead**")
+student_box = st.container()
+student_prog = student_box.progress(0.0, text="User's Beachhead — Initializing…")
+student_msg = student_box.empty()
 
-previous_attempts_text = ""
+st.subheader("BUTA Analysis — **Suggested Alternative**")
+alt_box = st.container()
+alt_prog = alt_box.progress(0.0, text="Suggested Alternative — Initializing…")
+alt_msg = alt_box.empty()
 
-for round_idx in range(1, MAX_ROUNDS + 1):
-    # Plan
-    steps_done += 1
-    step(f"Round {round_idx}: I am planning the next best segment to investigate.", steps_done, TOTAL_STEPS)
+# -------------------------- Validation (silent; no banners) --------------------------
+validated_student = student_beachhead.strip()
+if validated_student:
+    validator_raw = LLM.invoke([
+        SystemMessage(content=VALIDATOR_PROMPT),
+        HumanMessage(content=f"Proposed beachhead: {validated_student}\n\nIdea context:\n" + "\n".join(idea_overview_lines))
+    ])
+    validator = VALIDATOR_SCHEMA.invoke(validator_raw)
+    if not validator.get("valid", False):
+        improved = validator.get("improve", "").strip()
+        validated_student = improved or validated_student
 
-    plan_input = f"""
+# -------------------------- Workers (NO Streamlit calls inside) --------------------------
+TOTAL_STEPS_STUDENT = 18  # 1 plan + (4 dims * 2 queries * 2 steps) + 1 eval
+MAX_ROUNDS = 3
+TOTAL_STEPS_ALT = MAX_ROUNDS * (1 + (4*2*2) + 1) + 1  # == 55
+
+def student_worker(q: Queue) -> Tuple[Optional[Dict[str,Any]], str, str]:
+    """Evaluate user's beachhead with BUTA. Returns (evaluation_json, candidate_name, notes)."""
+    def emit(ev: Dict[str, Any]):
+        q.put(ev)
+
+    executor = make_search_executor()
+    counters = {"done": 0}
+
+    counters["done"] += 1
+    emit({"type": "step", "done": counters["done"], "total": TOTAL_STEPS_STUDENT,
+          "text": "Planning Tavily queries for the user's beachhead…"})
+
+    fixed_plan_raw = LLM.invoke([
+        SystemMessage(content=FIXED_PLANNER_PROMPT),
+        HumanMessage(content=("Overall idea:\n" + "\n".join(idea_overview_lines) +
+                              f"\n\nFixed candidate segment:\n{validated_student}"))
+    ])
+    fixed_plan = FIXED_PLANNER_SCHEMA.invoke(fixed_plan_raw)
+    plan_queries = fixed_plan.get("plan", {})
+
+    all_notes = ""
+    for dim in ["Budget","Urgency","Top-3 Fit","Access"]:
+        all_notes += research_dimension(validated_student, dim, plan_queries.get(dim, []),
+                                        emit, counters, TOTAL_STEPS_STUDENT, executor)
+
+    counters["done"] += 1
+    emit({"type": "step", "done": counters["done"], "total": TOTAL_STEPS_STUDENT,
+          "text": "Evaluating BUTA fit for the user's beachhead…"})
+
+    eval_input = f"Candidate: {validated_student}\n\nResearch notes:\n{all_notes}"
+    eval_raw = LLM.invoke([SystemMessage(content=EVALUATOR_PROMPT), HumanMessage(content=eval_input)])
+    evaluation = EVALUATOR_SCHEMA.invoke(eval_raw)
+
+    while counters["done"] < TOTAL_STEPS_STUDENT:
+        counters["done"] += 1
+        emit({"type": "step", "done": counters["done"], "total": TOTAL_STEPS_STUDENT,
+              "text": "Finalizing…"})
+
+    emit({"type": "done"})
+    return evaluation, validated_student, all_notes
+
+def alternative_worker(q: Queue, student_segment_for_context: Optional[str]) -> Tuple[List[Dict[str,Any]], List[Dict[str,Any]], str]:
+    """Iterative loop to find another beachhead, avoiding duplication with user's segment."""
+    def emit(ev: Dict[str, Any]):
+        q.put(ev)
+
+    executor = make_search_executor()
+
+    attempts: List[Dict[str, Any]] = []
+    recommendations: List[Dict[str, Any]] = []
+
+    previous_attempts_text = ""
+    if student_segment_for_context:
+        previous_attempts_text += (
+            f"Attempt on '{student_segment_for_context}': "
+            f"B:Unknown U:Unknown T:Unknown A:Unknown. "
+            f"This was user-proposed; avoid proposing the same or closely overlapping segment.\n"
+        )
+
+    counters = {"done": 0}
+
+    for round_idx in range(1, MAX_ROUNDS + 1):
+        counters["done"] += 1
+        emit({"type": "step", "done": counters["done"], "total": TOTAL_STEPS_ALT,
+              "text": f"Round {round_idx}: Planning the next alternative segment…"})
+
+        plan_input = f"""
 Idea:
 Problem: {problem}
 Solution: {solution}
@@ -237,68 +458,159 @@ Industry: {industry}
 Geos: {target_geos}
 Buyer roles: {buyer_roles}
 Price point: {price_point}
-Evidence: {evidence}
 Competitors: {competitors}
-Constraints: {constraints}
 
 Previous attempts & findings:
 {previous_attempts_text}
 """
-    plan_raw = LLM.invoke([SystemMessage(content=PLANNER_PROMPT), HumanMessage(content=plan_input)])
-    plan = PLANNER_SCHEMA.invoke(plan_raw)
+        plan_raw = LLM.invoke([SystemMessage(content=PLANNER_PROMPT), HumanMessage(content=plan_input)])
+        plan = PLANNER_SCHEMA.invoke(plan_raw)
 
-    if plan.get("decision") == "stop":
-        steps_done += 1
-        step(f"I decided to stop planning because: {plan.get('reason','')}.", steps_done, TOTAL_STEPS)
-        if plan.get("candidate"):
-            recommendations.append({"segment": plan["candidate"], "eval": None})  # placeholder
-        break
+        if plan.get("decision") == "stop":
+            counters["done"] += 1
+            emit({"type": "step", "done": counters["done"], "total": TOTAL_STEPS_ALT,
+                  "text": f"Stopped planning: {plan.get('reason','')}"})
+            if plan.get("candidate"):
+                recommendations.append({"segment": plan["candidate"], "eval": None})
+            break
 
-    candidate = plan["candidate"]
-    plan_queries = plan["plan"]
+        candidate = plan["candidate"]
+        if student_segment_for_context and candidate.strip().lower() == student_segment_for_context.strip().lower():
+            previous_attempts_text += f"\nSkipped duplicate candidate '{candidate}'.\n"
+            continue
 
-    # Research across BUTA (now shows exact search messages)
-    all_notes_for_round = ""
-    for dim in ["Budget","Urgency","Top-3 Fit","Access"]:
-        # Actually run queries and capture full text (no omissions)
-        all_notes_for_round += research_dimension(candidate, dim, plan_queries.get(dim, [])[:2])
+        plan_queries = plan["plan"]
 
-    # Evaluate
-    steps_done += 1
-    step(f"I am evaluating the BUTA fit for '{candidate}' using the collected research.", steps_done, TOTAL_STEPS)
+        all_notes_for_round = ""
+        for dim in ["Budget","Urgency","Top-3 Fit","Access"]:
+            all_notes_for_round += research_dimension(candidate, dim, plan_queries.get(dim, []),
+                                                      emit, counters, TOTAL_STEPS_ALT, executor)
 
-    eval_input = f"Candidate: {candidate}\n\nResearch notes:\n{all_notes_for_round}"
-    eval_raw = LLM.invoke([SystemMessage(content=EVALUATOR_PROMPT), HumanMessage(content=eval_input)])
-    evaluation = EVALUATOR_SCHEMA.invoke(eval_raw)
+        counters["done"] += 1
+        emit({"type": "step", "done": counters["done"], "total": TOTAL_STEPS_ALT,
+              "text": f"Evaluating BUTA fit for '{candidate}'…"})
 
-    attempts.append({"segment": candidate, "eval": evaluation, "notes": all_notes_for_round})
-    recommendations.append({"segment": candidate, "eval": evaluation})
+        eval_input = f"Candidate: {candidate}\n\nResearch notes:\n{all_notes_for_round}"
+        eval_raw = LLM.invoke([SystemMessage(content=EVALUATOR_PROMPT), HumanMessage(content=eval_input)])
+        evaluation = EVALUATOR_SCHEMA.invoke(eval_raw)
 
-    if evaluation["decision"] == "good_fit":
-        steps_done += 1
-        step(f"I found a strong fit for '{candidate}'. I will stop iterating and compile the report.", steps_done, TOTAL_STEPS)
-        break
+        attempts.append({"segment": candidate, "eval": evaluation, "notes": all_notes_for_round})
+        recommendations.append({"segment": candidate, "eval": evaluation})
 
-    # Prepare context for next round
-    previous_attempts_text += (
-        f"\nAttempt on '{candidate}': "
-        f"B:{evaluation['BUTA']['budget']['rating']} "
-        f"U:{evaluation['BUTA']['urgency']['rating']} "
-        f"T:{evaluation['BUTA']['top_fit']['rating']} "
-        f"A:{evaluation['BUTA']['access']['rating']}. "
-        f"{evaluation.get('notes','')}\n"
-    )
+        if evaluation["decision"] == "good_fit":
+            counters["done"] += 1
+            emit({"type": "step", "done": counters["done"], "total": TOTAL_STEPS_ALT,
+                  "text": f"Strong fit found for '{candidate}'."})
+            break
 
-# Keep the best 1–2 candidates by score
+        previous_attempts_text += (
+            f"\nAttempt on '{candidate}': "
+            f"B:{evaluation['BUTA']['budget']['rating']} "
+            f"U:{evaluation['BUTA']['urgency']['rating']} "
+            f"T:{evaluation['BUTA']['top_fit']['rating']} "
+            f"A:{evaluation['BUTA']['access']['rating']}. "
+            f"{evaluation.get('notes','')}\n"
+        )
+
+    while counters["done"] < TOTAL_STEPS_ALT:
+        counters["done"] += 1
+        emit({"type": "step", "done": counters["done"], "total": TOTAL_STEPS_ALT,
+              "text": "Finalizing…"})
+
+    emit({"type": "done"})
+    return attempts, recommendations, previous_attempts_text
+
+# -------------------------- Launch background tasks --------------------------
+student_q: Queue = Queue()
+alt_q: Queue = Queue()
+
+futures = {}
+with ThreadPoolExecutor(max_workers=2) as pool:
+    futures["student"] = pool.submit(student_worker, student_q)
+    futures["alt"] = pool.submit(alternative_worker, alt_q, validated_student)
+
+    # Main thread: poll queues and update UI safely
+    finished = set()
+    while len(finished) < len(futures):
+        # drain student queue
+        try:
+            while True:
+                ev = student_q.get_nowait()
+                if ev.get("type") == "step":
+                    done = ev.get("done", 0)
+                    total = max(ev.get("total", 1), 1)
+                    pct = min(done / total, 1.0)
+                    student_msg.info(ev.get("text", "Working…"))
+                    student_prog.progress(pct, text=ev.get("text", "Working…"))
+                elif ev.get("type") == "done":
+                    finished.add("student")
+                student_q.task_done()
+        except Empty:
+            pass
+
+        # drain alt queue
+        try:
+            while True:
+                ev = alt_q.get_nowait()
+                if ev.get("type") == "step":
+                    done = ev.get("done", 0)
+                    total = max(ev.get("total", 1), 1)
+                    pct = min(done / total, 1.0)
+                    alt_msg.info(ev.get("text", "Working…"))
+                    alt_prog.progress(pct, text=ev.get("text", "Working…"))
+                elif ev.get("type") == "done":
+                    finished.add("alt")
+                alt_q.task_done()
+        except Empty:
+            pass
+
+        time.sleep(0.1)
+
+# -------------------------- Gather results --------------------------
+student_result: Tuple[Optional[Dict[str,Any]], str, str] = (None, "", "")
+alt_attempts: List[Dict[str,Any]] = []
+alt_recs: List[Dict[str,Any]] = []
+_ = ""
+
+student_result = futures["student"].result()
+alt_attempts, alt_recs, _ = futures["alt"].result()
+
+# Combine
+attempts_all: List[Dict[str, Any]] = []
+recommendations: List[Dict[str, Any]] = []
+
+# User (student) track
+student_eval_json, student_segment_name, student_notes = student_result
+if student_eval_json and student_segment_name:
+    attempts_all.append({"segment": student_segment_name, "eval": student_eval_json, "notes": student_notes})
+    recommendations.append({"segment": student_segment_name, "eval": student_eval_json})
+
+# Alternative track
+recommendations.extend(alt_recs)
+attempts_all.extend(alt_attempts)
+
+def _scored(rec):
+    return score_eval(rec["eval"]) if rec["eval"] else -1
+
 scored_recs = [r for r in recommendations if r["eval"] is not None]
-scored_recs = sorted(scored_recs, key=lambda r: score_eval(r["eval"]), reverse=True)[:2]
-if not scored_recs and recommendations:
-    # In case planner stopped before any research
-    scored_recs = recommendations[:1]
+scored_recs = sorted(scored_recs, key=_scored, reverse=True)
+top_recs: List[Dict[str,Any]] = []
 
-# Build evaluations text for final writer (still no JSON shown to user)
+# Always include user's beachhead if available
+if student_eval_json and student_segment_name:
+    top_recs.append({"segment": student_segment_name, "eval": student_eval_json})
+for r in scored_recs:
+    if len(top_recs) >= 2:
+        break
+    if not student_segment_name or r["segment"].strip().lower() != student_segment_name.strip().lower():
+        top_recs.append(r)
+
+if not top_recs and recommendations:
+    top_recs = recommendations[:1]
+
+# Build evaluations text for final writer (NOT displayed; only for PDF or markdown)
 evaluations_text = ""
-for rec in scored_recs:
+for rec in top_recs:
     seg = rec["segment"]
     evaluations_text += f"\nSegment: {seg}\n"
     if rec["eval"] is not None:
@@ -311,12 +623,9 @@ for rec in scored_recs:
                 evaluations_text += "  sources: " + ", ".join(ev[k]["sources"]) + "\n"
 
 # Full research notes (EVERYTHING from Tavily kept verbatim)
-full_research_notes = "\n".join([a["notes"] for a in attempts])
+full_research_notes = "\n".join([a["notes"] for a in attempts_all])
 
-# Final writer — single report with narrative + complete research appendix
-steps_done += 1
-step("I am compiling the single report with the narrative summary and the complete research appendix.", steps_done, TOTAL_STEPS)
-
+# Final writer — single report
 final_raw = LLM.invoke([
     SystemMessage(content=FINAL_WRITER_PROMPT.format(
         idea_overview="\n".join(idea_overview_lines),
@@ -326,15 +635,25 @@ final_raw = LLM.invoke([
 ])
 final_report_text = final_raw.content
 
-# Done — fill progress if ended early
-while steps_done < TOTAL_STEPS:
-    steps_done += 1
-    step("Finalizing…", steps_done, TOTAL_STEPS)
-st.toast("BUTA analysis complete.", icon="✅")
+# -------------------------- Clearly mark which is user's vs suggested --------------------------
+st.markdown("---")
+st.subheader("BUTA Analysis — **User's Beachhead (from you)**")
+if student_segment_name:
+    st.markdown(f"**Segment analyzed:** {student_segment_name}")
 
-# -------------------------- Single Report Output --------------------------
+alt_segment_name = None
+for r in top_recs:
+    if (not student_segment_name) or r["segment"].strip().lower() != student_segment_name.strip().lower():
+        alt_segment_name = r["segment"]
+        break
+
+st.subheader("BUTA Analysis — **Suggested Alternative (by app)**")
+if alt_segment_name:
+    st.markdown(f"**Segment analyzed:** {alt_segment_name}")
+else:
+    st.markdown("_No distinct alternative segment qualified for display._")
+
+# -------------------------- Show report (Markdown only) --------------------------
+st.markdown("---")
 st.subheader("Complete BUTA Report")
-# This single report includes BOTH the narrative summary and the full research appendix.
-st.write(final_report_text)
-
-
+st.markdown(final_report_text)
