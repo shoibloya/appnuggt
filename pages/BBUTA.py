@@ -627,7 +627,7 @@ for rec in top_recs:
 # Full research notes (EVERYTHING from Tavily kept verbatim)
 full_research_notes = "\n".join([a["notes"] for a in attempts_all])
 
-# Final writer — single report (NOT displayed; used for PDF)
+# Final writer — single report
 final_raw = LLM.invoke([
     SystemMessage(content=FINAL_WRITER_PROMPT.format(
         idea_overview="\n".join(idea_overview_lines),
@@ -637,9 +637,12 @@ final_raw = LLM.invoke([
 ])
 final_report_text = final_raw.content
 
-# -------------------------- Download (PDF ONLY) --------------------------
-pdf_bytes = build_pdf_from_text(final_report_text)
+# -------------------------- Show report (Markdown) + Download (PDF) --------------------------
 st.markdown("---")
+st.subheader("Complete BUTA Report")
+st.markdown(final_report_text)  # <-- Show the report in Streamlit as Markdown
+
+pdf_bytes = build_pdf_from_text(final_report_text)
 if pdf_bytes:
     st.download_button(
         label="Download BUTA Report (PDF)",
