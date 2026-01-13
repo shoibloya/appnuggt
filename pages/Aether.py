@@ -138,6 +138,8 @@ with st.sidebar:
 sys_prompt_search_plan = f"""
 You are designing a fast research plan for a workshop team making a location strategy decision for a seed-stage maritime AI startup.
 
+It is currently 2025.
+
 Decision being evaluated: {strategy}
 Beachhead customer type: {customer_type}
 Primary pilot geography: {pilot_geo}
@@ -184,6 +186,8 @@ Return STRICT JSON in the exact structure below (no markdown, no extra keys):
 sys_prompt_research_agent = f"""
 You are helping executive education participants do fast, credible research.
 
+It is currently 2025.
+
 Context:
 - Decision: {strategy}
 - Customer: {customer_type}
@@ -217,6 +221,8 @@ research_prompt = ChatPromptTemplate(
 # (3) Final synthesis prompt (MARKDOWN ONLY)
 sys_prompt_synthesis = f"""
 You are producing a workshop-ready report for a student team. You must tailor the report to the team's inputs and the evidence provided.
+
+It is currently 2025.
 
 Team inputs:
 - Strategy evaluated: {strategy}
@@ -308,14 +314,8 @@ status_box.info("Step 2 of 3 — Gathering useful information from the web (this
 agent = create_openai_tools_agent(model, tools, research_prompt)
 agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False)
 
-# Prepare expanders to show progress + results
+# Prepare sections to show progress + results
 category_order = list(search_plan.get("searches", {}).keys())
-
-expander_map = {}
-first_open = True
-for cat in category_order:
-    expander_map[cat] = st.expander(f"Research results: {cat}", expanded=first_open)
-    first_open = False
 
 # Track all research for synthesis
 research_notes = []
@@ -328,60 +328,60 @@ total_queries = sum(len(search_plan["searches"][c]) for c in category_order) or 
 done_queries = 0
 
 for cat in category_order:
+    st.markdown(f"## Research results: {cat}")
+    st.write("We’re pulling a few relevant sources and turning them into decision-ready notes…")
     queries = search_plan["searches"][cat]
-    with expander_map[cat]:
-        st.write("We’re pulling a few relevant sources and turning them into decision-ready notes…")
-        for item in queries:
-            q = item["search"]
-            done_queries += 1
+    for item in queries:
+        q = item["search"]
+        done_queries += 1
 
-            # Friendly “alive” updates
-            progress_pct = 20 + int(60 * (done_queries / total_queries))
-            progress.progress(min(progress_pct, 80))
-            status_box.info(f"Gathering notes ({done_queries}/{total_queries})…")
+        # Friendly “alive” updates
+        progress_pct = 20 + int(60 * (done_queries / total_queries))
+        progress.progress(min(progress_pct, 80))
+        status_box.info(f"Gathering notes ({done_queries}/{total_queries})…")
 
-            loader = st.empty()
-            loader.info(f"Looking up: {q} ⏳")
+        loader = st.empty()
+        loader.info(f"Looking up: {q} ⏳")
 
-            # Run research with context-length fallback
-            try:
-                out = agent_executor.invoke({"input": q})["output"]
-            except Exception as e:
-                if _is_ctx_len_error(e):
-                    # Smaller tool payload fallback
-                    tools_small = [
-                        TavilySearchResults(
-                            max_results=3,
-                            include_answer=True,
-                            include_raw_content=False,
-                            search_depth="advanced"
-                        )
-                    ]
-                    agent_small = create_openai_tools_agent(model, tools_small, research_prompt)
-                    agent_executor_small = AgentExecutor(agent=agent_small, tools=tools_small, verbose=False)
-                    out = agent_executor_small.invoke({"input": q})["output"]
-                    out = _shrink_to_first_third(out)
-                else:
-                    raise
+        # Run research with context-length fallback
+        try:
+            out = agent_executor.invoke({"input": q})["output"]
+        except Exception as e:
+            if _is_ctx_len_error(e):
+                # Smaller tool payload fallback
+                tools_small = [
+                    TavilySearchResults(
+                        max_results=3,
+                        include_answer=True,
+                        include_raw_content=False,
+                        search_depth="advanced"
+                    )
+                ]
+                agent_small = create_openai_tools_agent(model, tools_small, research_prompt)
+                agent_executor_small = AgentExecutor(agent=agent_small, tools=tools_small, verbose=False)
+                out = agent_executor_small.invoke({"input": q})["output"]
+                out = _shrink_to_first_third(out)
+            else:
+                raise
 
-            loader.info(q)
-            st.success(out)
+        loader.info(q)
+        st.success(out)
 
-            # Collect notes
-            research_notes.append(f"### {cat}\nQuery: {q}\n{out}\n")
+        # Collect notes
+        research_notes.append(f"### {cat}\nQuery: {q}\n{out}\n")
 
-            # Best-effort link collection
-            for m in link_regex.findall(out):
-                if isinstance(m, tuple):
-                    for part in m:
-                        if part and part.startswith("http"):
-                            all_links.add(part)
-                elif m and isinstance(m, str) and m.startswith("http"):
-                    all_links.add(m)
+        # Best-effort link collection
+        for m in link_regex.findall(out):
+            if isinstance(m, tuple):
+                for part in m:
+                    if part and part.startswith("http"):
+                        all_links.add(part)
+            elif m and isinstance(m, str) and m.startswith("http"):
+                all_links.add(m)
 
 progress.progress(85)
 status_box.info("Step 3 of 3 — Writing a clear workshop report you can present.")
-
+progress_box.info("Generating your workshop report…")
 
 # Step 3: Synthesis to MARKDOWN
 research_blob = "\n\n".join(research_notes)
@@ -389,23 +389,25 @@ research_blob = "\n\n".join(research_notes)
 # Shrink-on-context loop
 md_report = None
 blob_tmp = research_blob
-while True:
-    try:
-        synth = model.invoke([
-            SystemMessage(content=sys_prompt_synthesis),
-            HumanMessage(content=f"Research notes (with links):\n\n{blob_tmp}")
-        ])
-        md_report = synth.content.strip()
-        break
-    except Exception as e:
-        if _is_ctx_len_error(e):
-            blob_tmp = _shrink_to_first_third(blob_tmp)
-            continue
-        else:
-            st.error("Something went wrong while writing the report. Please try again.")
-            st.exception(e)
-            st.stop()
+with st.spinner("Generating your workshop report…"):
+    while True:
+        try:
+            synth = model.invoke([
+                SystemMessage(content=sys_prompt_synthesis),
+                HumanMessage(content=f"Research notes (with links):\n\n{blob_tmp}")
+            ])
+            md_report = synth.content.strip()
+            break
+        except Exception as e:
+            if _is_ctx_len_error(e):
+                blob_tmp = _shrink_to_first_third(blob_tmp)
+                continue
+            else:
+                st.error("Something went wrong while writing the report. Please try again.")
+                st.exception(e)
+                st.stop()
 
+progress_box.empty()
 progress.progress(100)
 status_box.success("Done! Your workshop report is ready.")
 
@@ -414,5 +416,5 @@ st.session_state["last_report_md"] = md_report
 st.markdown(md_report)
 
 # Optional: quick copy area
-with st.expander("Copy-friendly version", expanded=False):
-    st.text_area("Markdown report", md_report, height=300)
+st.subheader("Copy-friendly version")
+st.text_area("Markdown report", md_report, height=300)
