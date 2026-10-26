@@ -135,6 +135,12 @@ Use only the supplied source IDs for citations, and never output URLs, Markdown
 links, HTML, or claims of certainty. A citation supports only what the supplied
 excerpt actually says. Note mismatched geography, dates, populations and proxy
 evidence. Seek evidence against the idea. Write concise, specific plain English.
+Missing evidence is not evidence of absence: say 'not established in this
+research' rather than claiming no alternatives, users, or channels exist. Never
+generalize a limited search into a universal claim. Treat forum posts as anecdotes,
+not prevalence data. Distinguish exact-category evidence from adjacent analogies:
+do not apply another business model's fees, performance or adoption rates to this
+concept as facts. Cite the actual comparator and label transfer assumptions.
 Return only the JSON object required by the response schema.
 """
 
@@ -281,13 +287,18 @@ def _assess_lens(client, lens, brief, framing, sources):
 Assess ONLY the supplied lens. Answer every supplied question in the given order,
 using its exact id. Each answer should be 2-4 substantive sentences specific to
 the idea: supporting/contradictory evidence, implication and remaining uncertainty.
+You have a shared evidence pool from ALL three lenses. Prioritize sources most
+relevant to this question, regardless of which lens retrieved them. Check existing
+solutions/competitors found anywhere in that pool before asserting an unmet need.
 For an answer grounded in retrieved excerpts use basis 'Web evidence' and relevant
 source_ids. For claims supplied by the team use 'Team input'. Otherwise use
 'Hypothesis'. Mixed answers must distinguish evidence from inference in the text.
 Never claim actual customer validation; market size or a competitor is a proxy.
 Use 'Unknown' if there is insufficient evidence for a directional signal.
 Confidence describes desk-research coverage only (Low or Medium), not probability
-of success. Keep unsupported delivery/financial numbers explicitly hypothetical.
+of success. Use Low if critical claims rely on anecdotes, indirect proxies or
+adjacent-category analogies. Source count alone does not justify Medium.
+Keep unsupported delivery/financial numbers explicitly hypothetical.
 Do not assert legal compliance, medical safety or eligibility from this analysis.
 Provide the single critical assumption for this lens and a cheap, specific test.
 The experiment needs a falsifiable hypothesis, named target participants/context,
@@ -368,12 +379,19 @@ seek barriers, failed alternatives, costs or disconfirming evidence. Prefer
 authoritative primary research, official technical documentation, public data,
 regulators and actual competitor pricing. Do not put confidential evidence notes,
 contact details or credentials into queries. Searches cannot validate this idea.
+For desirability, cover both observed problem behavior AND existing solutions,
+substitutes, adoption and reasons people do not switch. Do not research only the
+problem. For feasibility, cover practical delivery AND official local operational
+or regulatory constraints. For viability, look for actual comparable provider
+pricing/funding terms AND costs, access or sustainability barriers; avoid broad
+market-size forecasts. At least one search must explicitly investigate existing
+alternatives to the submitted idea in the supplied geography.
 """, {"brief": brief, "question_bank": LENSES, "date": datetime.now(timezone.utc).date().isoformat()}, plan_schema, token_limit=2200, validator=validate_queries)
         progress(0.15, "Looking for evidence, alternatives and obstacles")
         sources, research = _collect_research(plan["queries"], tavily_key, progress)
         lenses = {}
         with ThreadPoolExecutor(max_workers=3) as pool:
-            futures = {pool.submit(_assess_lens, client, lens, brief, plan["framing"], [s for s in sources if s["lens"] == lens]): lens for lens in LENSES}
+            futures = {pool.submit(_assess_lens, client, lens, brief, plan["framing"], sources): lens for lens in LENSES}
             failed = 0
             for done, future in enumerate(as_completed(futures), 1):
                 lens = futures[future]
@@ -398,8 +416,12 @@ blockers to resolve first). This is NOT a launch, investment or validation verdi
 A fatal constraint must remain visible; never average it away. Unavailable lenses
 are material gaps. Identify the most decision-critical weakly evidenced lens as
 priority_lens and explain why in the rationale. Make all three critical assumptions
-visible in the tensions or next steps. Propose 2-3 distinct concept directions
-that solve the underlying need and explain each tradeoff. State exactly 3 ordered
+visible in the tensions or next steps.
+Check the assessments for contradictions about existing alternatives, customer
+behavior and costs. Do not repeat unsupported absence claims where another lens
+has identified relevant alternatives. Make unresolved contradictions explicit.
+Propose 2-3 distinct concept directions that solve the underlying need and explain
+each tradeoff. State exactly 3 ordered
 next steps with learning goals, starting with the riskiest assumption. Include
 5-6 non-leading interview questions about recent actual experience, workarounds,
 costs and failed alternatives; avoid 'would you use/pay for this?' questions.

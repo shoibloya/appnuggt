@@ -84,9 +84,42 @@ class ModelAndPipelineTests(unittest.TestCase):
         for key, spec in dt.LENSES.items():
             answers = result["lenses"][key]["questions"]
             self.assertEqual([a["id"] for a in answers], [q["id"] for q in spec["questions"]])
-            allowed = {s["id"] for s in result["sources"] if s["lens"] == key}
+            allowed = {s["id"] for s in result["sources"]}
             self.assertTrue(all(set(a["source_ids"]) <= allowed for a in answers))
         self.assertEqual(sum(len(a["questions"]) for a in result["lenses"].values()), 15)
+
+    def test_all_lenses_share_evidence_and_retain_cross_lens_citations(self):
+        competitor_finding = "An existing resident surplus-sales alternative operates in the target geography."
+
+        def search(key, query):
+            response = search_result(key, query)
+            if "viability" in query:
+                response["results"][0]["content"] = competitor_finding
+            return response
+
+        def mutate(name, value, kwargs):
+            if name == "desirability_assessment":
+                # The evidence was retrieved by viability research, but it also
+                # directly answers D2 about existing user alternatives.
+                value["questions"][1]["answer"] = competitor_finding
+                value["questions"][1]["source_ids"] = ["S3"]
+            return value
+
+        client = FakeClient(mutate)
+        with patch("openai.OpenAI", return_value=client), patch.object(dt, "_search", side_effect=search):
+            result = dt.evaluate_idea(BRIEF, "test-openai-key", "test-tavily-key")
+        expected_ids = {source["id"] for source in result["sources"]}
+        lens_calls = [(name, kwargs) for name, kwargs in client.calls if name.endswith("_assessment")]
+        self.assertEqual(len(lens_calls), 3)
+        for name, kwargs in lens_calls:
+            with self.subTest(lens=name):
+                shared_sources = json.loads(kwargs["messages"][1]["content"])["sources"]
+                self.assertEqual({source["id"] for source in shared_sources}, expected_ids)
+                self.assertTrue(any(source["content"] == competitor_finding for source in shared_sources))
+        desirability_answer = result["lenses"]["desirability"]["questions"][1]
+        self.assertEqual(desirability_answer["source_ids"], ["S3"])
+        self.assertEqual(desirability_answer["basis"], "Web evidence")
+        self.assertEqual(next(s["lens"] for s in result["sources"] if s["id"] == "S3"), "viability")
 
     def test_deep_mode_is_bounded_to_nine_searches(self):
         result, _ = self.run_pipeline(depth=3)
