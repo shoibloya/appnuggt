@@ -1,4 +1,5 @@
 import streamlit as st
+from app_ui import hide_text_field_hints
 import os
 
 # Import necessary LangChain components
@@ -29,11 +30,12 @@ tools = [TavilySearchResults(max_results=3, include_answer=True, include_raw_con
 
 # Set Streamlit Page Config
 st.set_page_config(page_title="Due Diligence Dashboard", layout="wide")
+hide_text_field_hints()
 
 # ----------------------------------------------------------------------------
 # Sidebar: Collecting Input for Due Diligence
 # ----------------------------------------------------------------------------
-with st.sidebar:
+with st.sidebar, st.form("due_diligence_inputs", enter_to_submit=False, border=False):
     company_type = st.selectbox(
         "Is this a well-known company or greenfield entrepreneurship?",
         ["Well-known", "Greenfield Entrepreneurship"]
@@ -48,7 +50,8 @@ with st.sidebar:
     red_flags = st.text_area("Red Flags or Concerns", "")
     additional_comments = st.text_area("Additional Comments or Observations", "")
 
-    if st.button("Conduct Due Diligence", key="create_due_diligence_button"):
+    run_due_diligence = st.form_submit_button("Conduct Due Diligence")
+    if run_due_diligence:
         # Store inputs into session state
         st.session_state['user_input'] = {
             'company_type': company_type,
@@ -376,7 +379,7 @@ def present_due_diligence(expander, data):
 # ----------------------------------------------------------------------------
 # If user input is provided, generate the due diligence
 # ----------------------------------------------------------------------------
-if 'user_input' in st.session_state:
+if run_due_diligence:
     # ------------------------------------------------------------------------
     # Step 1: Generate recommended searches for each category
     # ------------------------------------------------------------------------

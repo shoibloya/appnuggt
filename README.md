@@ -2,6 +2,8 @@
 
 A Streamlit workshop with Ideation, Due Diligence, Aether, BUTA, and Design Thinking tools.
 
+All tools submit their input only when their run button is activated. Enter and Cmd/Ctrl+Enter inside fields do not start research; Enter still creates a new line in text areas. Shortcut hints and character-count footers are hidden, while input limits remain enforced.
+
 ## Design Thinking
 
 Start with a broad idea; audience, geography, constraints, funding and prior evidence are optional. The new tool frames a provisional problem and researches **desirability, feasibility and viability** using the same OpenAI (`gpt-4.1`) and Tavily APIs as the existing tools.

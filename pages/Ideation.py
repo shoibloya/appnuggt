@@ -1,4 +1,5 @@
 import streamlit as st
+from app_ui import hide_text_field_hints
 import os
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -22,6 +23,7 @@ model = ChatOpenAI(model="gpt-4o", temperature=0)
 tools = [TavilySearchResults(max_results=3, include_answer=True, include_raw_content=True, search_depth="advanced")]
 
 st.set_page_config(page_title="Greenfield Entrepreneurship Dashboard", layout="wide")
+hide_text_field_hints()
 
 # ---- helper functions for shrinking on context-length error (ADDED) ----
 def _is_ctx_len_error(err: Exception) -> bool:
@@ -35,7 +37,7 @@ def _shrink_to_first_third(text: str) -> str:
 # ------------------------------------------------------------------------
 
 # Sidebar to take user input
-with st.sidebar:
+with st.sidebar, st.form("ideation_inputs", enter_to_submit=False, border=False):
     corporate = st.text_input("Corporate (e.g. Amazon), Please put 'Greenfield Entrepreneurship' otherwise.", "Greenfield Entrepreneurship")
     industry = st.text_input("Industry", "New Venture (Greenfield)")
     company_overview = st.text_area("Company Overview (What does the company do?)", "")
@@ -48,7 +50,8 @@ with st.sidebar:
     rough_idea = st.text_area("Rough Idea (optional)", "")
     additional_insights = st.text_area("Additional Insights", "")
     
-    if st.button("Create Innovation Pitch", key="create_pitch_button"):
+    run_ideation = st.form_submit_button("Create Innovation Pitch")
+    if run_ideation:
         # Store the input values into session state to use later
         st.session_state['user_input'] = {
             'corporate': corporate,
@@ -511,7 +514,7 @@ def pitch_idea(idea_expander, data):
       st.markdown(f"**Break-Even Timeline:** {data['financial_projections']['break_even_analysis']['break_even_timeline']}")
       st.markdown(f"**Conditions for Break-Even:** {data['financial_projections']['break_even_analysis']['conditions']}")
 
-if 'user_input' in st.session_state:
+if run_ideation:
     # Define the interaction for invoking the model with updated prompts
     messages = [
         SystemMessage(content=sys_prompt_market_analysis),

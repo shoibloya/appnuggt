@@ -8,6 +8,8 @@ from urllib.parse import urlparse
 
 import streamlit as st
 
+from app_ui import hide_text_field_hints
+
 from design_thinking import (
     FRAMEWORK_SOURCES,
     LENSES,
@@ -20,6 +22,7 @@ from design_thinking import (
 
 
 st.set_page_config(page_title="Design Thinking · nuggt", page_icon="✦", layout="wide")
+hide_text_field_hints()
 
 INPUT_FIELDS = (
     "idea", "target_users", "geography", "context", "constraints", "business_model", "evidence"
@@ -252,7 +255,7 @@ with st.sidebar:
     st.subheader("Start with an idea")
     st.caption("A rough idea is enough. Add context where you have it.")
     st.button("Try an example", on_click=load_example, use_container_width=True)
-    with st.form("dt_brief_form"):
+    with st.form("dt_brief_form", enter_to_submit=False):
         idea = st.text_area(
             "Broad idea *",
             key="dt_input_idea",

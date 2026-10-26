@@ -1,4 +1,5 @@
 import streamlit as st
+from app_ui import hide_text_field_hints
 import os
 import re
 from datetime import datetime
@@ -25,6 +26,7 @@ from langchain_community.tools.tavily_search import TavilySearchResults
 # Setup
 # -----------------------------
 st.set_page_config(page_title="Aether-AI Location Strategy Workshop", layout="wide")
+hide_text_field_hints()
 
 parser = JsonOutputParser()
 str_parser = StrOutputParser()
@@ -83,7 +85,7 @@ tools = [
 # -----------------------------
 # Sidebar Inputs (Students)
 # -----------------------------
-with st.sidebar:
+with st.sidebar, st.form("aether_inputs", enter_to_submit=False, border=False):
     st.title("Workshop Inputs")
 
     strategy = st.radio(
@@ -128,7 +130,7 @@ with st.sidebar:
         placeholder="Anything important? e.g., must hire fast, investor wants SG entity, need proximity to customers..."
     )
 
-    run_btn = st.button("Generate Workshop Report", use_container_width=True)
+    run_btn = st.form_submit_button("Generate Workshop Report", use_container_width=True)
 
 
 # -----------------------------

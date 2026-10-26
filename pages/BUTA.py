@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from queue import Queue, Empty
 
 import streamlit as st
+from app_ui import hide_text_field_hints
 
 # LangChain / OpenAI & Tools
 from langchain_openai import ChatOpenAI
@@ -25,6 +26,7 @@ from langchain_community.tools.tavily_search import TavilySearchResults
 
 # -------------------------- App Config --------------------------
 st.set_page_config(page_title="BUTA Beachhead Finder (Parallel Mode)", layout="wide")
+hide_text_field_hints()
 
 # Secrets/env
 if not os.environ.get("OPENAI_API_KEY"):
@@ -178,24 +180,25 @@ Return STRICT JSON ONLY:
 """
 
 # -------------------------- Sidebar Inputs (ALL REQUIRED) --------------------------
-st.sidebar.header("Fill All Fields")
+with st.sidebar, st.form("buta_inputs", enter_to_submit=False, border=False):
+    st.header("Fill All Fields")
 
-problem = st.sidebar.text_area("Problem / Job-to-be-Done", height=80)
-solution = st.sidebar.text_area("Your Solution & Differentiators", height=100)
-industry = st.sidebar.text_input("Industry / Category")
-target_geos = st.sidebar.text_input("Target Geography")
-buyer_roles = st.sidebar.text_input("Buyer / User Roles")
-price_point = st.sidebar.text_input("Expected Price Point")
-competitors = st.sidebar.text_area("Known Alternatives / Competitors", height=60)
+    problem = st.text_area("Problem / Job-to-be-Done", height=80)
+    solution = st.text_area("Your Solution & Differentiators", height=100)
+    industry = st.text_input("Industry / Category")
+    target_geos = st.text_input("Target Geography")
+    buyer_roles = st.text_input("Buyer / User Roles")
+    price_point = st.text_input("Expected Price Point")
+    competitors = st.text_area("Known Alternatives / Competitors", height=60)
 
-st.sidebar.markdown("---")
-student_beachhead = st.sidebar.text_area(
-    "Your Proposed Beachhead (Segment)",
-    placeholder="e.g., Mid-sized DTC fashion stores (50–200 SKUs) in the US on Shopify Plus, using GA4 and Klaviyo.",
-    height=90,
-)
+    st.markdown("---")
+    student_beachhead = st.text_area(
+        "Your Proposed Beachhead (Segment)",
+        placeholder="e.g., Mid-sized DTC fashion stores (50–200 SKUs) in the US on Shopify Plus, using GA4 and Klaviyo.",
+        height=90,
+    )
 
-start = st.sidebar.button("Run BUTA", type="primary")
+    start = st.form_submit_button("Run BUTA", type="primary")
 
 # -------------------------- Small helpers --------------------------
 def normalize_urls(text: str) -> List[str]:
