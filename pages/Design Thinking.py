@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 import streamlit as st
 
-from app_ui import hide_text_field_hints
+from app_ui import hide_text_field_hints, render_download_link
 
 from design_thinking import (
     FRAMEWORK_SOURCES,
@@ -228,6 +228,15 @@ st.markdown(
 .dt-confidence { display: block; font-size: .73rem; opacity: .65; }
 .dt-kicker { margin: 1.4rem 0 .4rem; opacity: .6; font-size: .73rem; font-weight: 600;
   letter-spacing: .12em; text-transform: uppercase; }
+a.dt-download-link { display: flex; align-items: center; justify-content: center;
+  min-height: 2.6rem; padding: .5rem .65rem; border-radius: 8px;
+  border: 1px solid rgba(128,128,128,.35); color: inherit !important;
+  background: transparent; font-size: .8rem; font-weight: 600;
+  line-height: 1.4; text-align: center; text-decoration: none !important; }
+a.dt-download-link:focus-visible { outline: 2px solid #a08acc; outline-offset: 3px; }
+@media (hover: hover) and (pointer: fine) {
+  a.dt-download-link:hover { border-color: #a08acc; background: rgba(160,138,204,.1); }
+}
 [data-testid="stSidebar"] [data-testid="stForm"] { border: 0; padding: 0; }
 [data-testid="stSidebar"] [data-testid="stFormSubmitButton"] button { min-height: 2.8rem; }
 [data-testid="stTabs"] [role="tablist"] { gap: 1.4rem; overflow-x: auto; }
@@ -428,15 +437,9 @@ else:
         pdf_column, markdown_column = st.columns(2)
         with pdf_column:
             if files["pdf"]:
-                st.download_button(
-                    "Download PDF", files["pdf"], file_name="nuggt-design-thinking-report.pdf",
-                    mime="application/pdf", use_container_width=True, key="dt_download_pdf",
-                )
+                render_download_link(files["pdf"], "nuggt-design-thinking-report.pdf", "application/pdf", "Download PDF")
         with markdown_column:
-            st.download_button(
-                "Markdown", files["markdown"], file_name="nuggt-design-thinking-report.md",
-                mime="text/markdown", use_container_width=True, key="dt_download_md",
-            )
+            render_download_link(files["markdown"], "nuggt-design-thinking-report.md", "text/markdown", "Markdown")
         if not files["pdf"]:
             st.caption("PDF export is unavailable. The Markdown download contains the complete report.")
     research = report["research"]

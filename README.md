@@ -14,6 +14,7 @@ Start with a broad idea; audience, geography, constraints, funding and prior evi
 - An independent evidence check corrects unsupported claims and checks proposed experiments before the final synthesis. Corrected web claims require a matching quotation from a retrieved excerpt.
 - Three proposed experiments with participants, observable measures, pass/fail thresholds and timeboxes, followed by a non-leading interview guide.
 - Session-specific persistent reports, a source/search appendix, and full PDF/Markdown downloads. Input edits and downloads do not rerun the APIs. Submit the form to generate a new report.
+- Prepared downloads carry their file bytes in the page itself, so downloading does not depend on Streamlit's temporary media-file URLs or trigger a script rerun.
 
 The report is an **early evidence review, not customer validation**. Team claims are treated as unverified input. Public research does not prove demand for the concept. Estimates, experiment thresholds and proposed segments must remain labeled as assumptions. There is deliberately no averaged success score that could hide a critical blocker.
 
