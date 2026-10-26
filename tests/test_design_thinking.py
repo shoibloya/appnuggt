@@ -77,7 +77,7 @@ class ModelAndPipelineTests(unittest.TestCase):
 
     def test_full_pipeline_has_complete_ordered_answers_and_only_retrieved_sources(self):
         result, client = self.run_pipeline()
-        self.assertEqual(len(client.calls), 5)
+        self.assertEqual(len(client.calls), 6)
         self.assertEqual(result["research"]["total_searches"], 6)
         self.assertEqual(len(result["sources"]), 3)
         self.assertEqual(result["brief"], BRIEF)
@@ -125,6 +125,42 @@ class ModelAndPipelineTests(unittest.TestCase):
         result, _ = self.run_pipeline(depth=3)
         self.assertEqual(result["research"]["total_searches"], 9)
         self.assertTrue(all(len(q) == 3 for q in result["research"]["queries"].values()))
+
+    def test_evidence_check_removes_unsupported_fee_before_synthesis(self):
+        def mutate(name, value, kwargs):
+            if name == "viability_assessment":
+                value["questions"][0]["answer"] = "Surplus apps charge a 30% commission."
+            if name == "design_evidence_check":
+                value["assessments"]["viability"]["summary"] = "Actual surplus-app commission rates are not established in this research."
+                value["corrections"] = [{
+                    "lens": "viability", "question_id": "V1",
+                    "answer": "The actual provider fee is not established in the retrieved evidence. Test a proposed price with bakeries.",
+                    "basis": "Hypothesis", "source_ids": [],
+                    "support_quote": "Not established in the retrieved evidence",
+                    "gap": "Obtain the actual merchant terms and measure net contribution.",
+                }]
+            return value
+        result, client = self.run_pipeline(FakeClient(mutate))
+        self.assertNotIn("30%", result["lenses"]["viability"]["questions"][0]["answer"])
+        self.assertEqual(result["lenses"]["viability"]["confidence"], "Low")
+        synthesis_input = json.loads(next(kwargs for name, kwargs in client.calls if name == "design_synthesis")["messages"][1]["content"])
+        self.assertNotIn("30%", synthesis_input["lenses"]["viability"]["questions"][0]["answer"])
+
+    def test_corrected_web_claim_requires_an_exact_retrieved_quotation(self):
+        def mutate(name, value, kwargs):
+            if name == "design_evidence_check":
+                value["corrections"] = [{
+                    "lens": "viability", "question_id": "V1", "answer": "A possible fee remains an assumption.",
+                    "basis": "Web evidence", "source_ids": ["S1"],
+                    "support_quote": "An invented quotation that is absent from the retrieved excerpt.",
+                    "gap": "Confirm the provider's terms.",
+                }]
+            return value
+        result, _ = self.run_pipeline(FakeClient(mutate))
+        answer = result["lenses"]["viability"]["questions"][0]
+        self.assertEqual(answer["basis"], "Hypothesis")
+        self.assertEqual(answer["source_ids"], [])
+        self.assertIn("could not be matched", answer["gap"])
 
     def test_duplicate_search_plan_retries_once_then_fails(self):
         def mutate(name, value, kwargs):

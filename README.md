@@ -9,6 +9,7 @@ Start with a broad idea; audience, geography, constraints, funding and prior evi
 - 15 substantive questions: real user behavior and alternatives, delivery capability and dependencies, and sustainable economics/funding.
 - Six focused searches by default, or nine for deeper coverage, run concurrently. Three lens assessments also run concurrently. Calls have timeouts and bounded retries; no open-ended agent loops.
 - Distinct signals and evidence confidence, traceable citations, explicit unknowns, alternative concepts, and the assumptions that could change the decision.
+- An independent evidence check corrects unsupported claims and checks proposed experiments before the final synthesis. Corrected web claims require a matching quotation from a retrieved excerpt.
 - Three proposed experiments with participants, observable measures, pass/fail thresholds and timeboxes, followed by a non-leading interview guide.
 - Session-specific persistent reports, a source/search appendix, and full PDF/Markdown downloads. Input edits and downloads do not rerun the APIs. Submit the form to generate a new report.
 

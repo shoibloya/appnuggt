@@ -121,6 +121,11 @@ class FakeClient:
             result = plan(count)
         elif name.endswith("_assessment"):
             result = assessment(data["lens"], [source["id"] for source in data["sources"]][:2])
+        elif name == "design_evidence_check":
+            result = {
+                "assessments": {key: {"summary": value["summary"], "experiment": deepcopy(value["experiment"])} for key, value in data["assessments"].items()},
+                "corrections": [],
+            }
         else:
             result = synthesis()
         if self.mutator:

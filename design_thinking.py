@@ -117,6 +117,15 @@ SYNTHESIS_SCHEMA = _object({
     "concepts": _array(_object({"name": TEXT, "description": TEXT, "tradeoff": TEXT}), 2, 3),
     "priority_lens": {"type": "string", "enum": list(LENSES)},
 })
+AUDIT_SCHEMA = _object({
+    "assessments": _object({key: _object({"summary": TEXT, "experiment": EXPERIMENT_SCHEMA}) for key in LENSES}),
+    "corrections": _array(_object({
+        "lens": {"type": "string", "enum": list(LENSES)},
+        "question_id": TEXT, "answer": TEXT,
+        "basis": {"type": "string", "enum": ["Web evidence", "Team input", "Hypothesis"]},
+        "source_ids": _array(TEXT, 0, 4), "support_quote": TEXT, "gap": TEXT,
+    }), 0, 15),
+})
 
 GROUNDING_RULES = """
 You are a rigorous, practical human-centered design researcher helping evaluate a
@@ -305,6 +314,11 @@ The experiment needs a falsifiable hypothesis, named target participants/context
 method/prototype, observable metric, proposed numeric pass threshold, failure
 signal, timebox and rough effort/cost assumption. Thresholds are proposed choices,
 not scientific standards. Include a stop/reframe decision if the test fails.
+For viability, measure actual payments/funding commitments, delivery/acquisition
+effort and net contribution; participation or interview enthusiasm alone is not
+a test of sustainable economics. For any real-world pilot, identify applicable
+safety, consent, licensing or permission checks BEFORE it begins. A small pilot
+with no incidents never establishes general safety or regulatory compliance.
 """, {"lens": lens, "brief": brief, "framing": framing, "questions": questions, "sources": sources},
         LENS_SCHEMA, token_limit=4000, validator=validate_ids)
     allowed = {source["id"] for source in sources}
@@ -331,6 +345,70 @@ def _unavailable_lens(lens):
         "critical_assumption": "The assumptions for this lens remain unassessed.",
         "experiment": {k: "Not generated. Rerun this assessment or design this test with your team." for k in EXPERIMENT_SCHEMA["properties"]},
     }
+
+
+def _audit_lenses(client, brief, lenses, sources):
+    """Independently check factual support and experiment design before synthesis."""
+    def validate_corrections(result):
+        seen = set()
+        for correction in result["corrections"]:
+            key = (correction["lens"], correction["question_id"])
+            allowed = {q["id"] for q in LENSES[key[0]]["questions"]}
+            if key[1] not in allowed or key in seen:
+                raise ValueError("Correction has an invalid or repeated question ID")
+            seen.add(key)
+
+    review = _json_call(client, "design_evidence_check", """
+Act as an independent skeptical fact-checker of the supplied assessments. Check
+each answer against the ACTUAL RETRIEVED EXCERPTS, not your background knowledge
+or what the linked full page might say. Correct every materially unsupported,
+overbroad or contradictory factual claim. Leave sound answers out of corrections.
+Rewrite each lens summary to reflect only supported claims and explicit gaps.
+
+Particularly check numerical fees, costs, outcomes and performance: a rate from
+food delivery is NOT a verified commission for a surplus-pickup marketplace.
+A hypothetical startup concept, vendor claim or anecdote is not observed industry
+data. If exact comparable fees are not in the excerpts, remove the asserted range
+or state it is an illustrative assumption. Preserve populations, dates, geographies
+and qualifications in legal claims: a rule for certain food categories must never
+become a rule for all food. Do not imply legal approval or safety certification.
+Absence of evidence in this limited research is not proof something does not exist.
+
+For each correction, supply the question's exact id, a replacement complete answer,
+basis, valid source_ids, gap and a SHORT verbatim support_quote copied from one
+cited excerpt. If there is no supporting excerpt, use basis Hypothesis, no IDs,
+and support_quote 'Not established in the retrieved evidence'. Team input remains
+unverified and must be labeled. Never add new factual claims.
+
+Also review and return all three proposed experiment cards. Keep tests cheap and
+specific, with measurable numeric thresholds labeled as proposed. Viability MUST
+test actual payment/funding commitments AND delivery/acquisition costs or effort
+and net contribution (not just how many people list/sign up). Require relevant
+licensing/safety/consent/permission preflight checks before a real pilot, without
+inventing which approvals apply. A tiny no-incident sample is not proof of safety.
+If a lens was unavailable, retain its explicit unavailable status and do not invent
+a replacement assessment or claim the experiment was generated successfully.
+""", {"brief": brief, "assessments": lenses, "sources": sources}, AUDIT_SCHEMA,
+        token_limit=5000, validator=validate_corrections)
+    source_index = {source["id"]: source for source in sources}
+    for correction in review["corrections"]:
+        lens = lenses[correction["lens"]]
+        question = next(q for q in lens["questions"] if q["id"] == correction["question_id"])
+        ids = list(dict.fromkeys(sid for sid in correction["source_ids"] if sid in source_index))
+        quote = " ".join(correction["support_quote"].split()).casefold()
+        grounded = ids and any(quote in " ".join(source_index[sid]["content"].split()).casefold() for sid in ids)
+        basis, gap = correction["basis"], correction["gap"]
+        if basis == "Web evidence" and not grounded:
+            basis, ids = "Hypothesis", []
+            gap += " The proposed supporting quotation could not be matched to a retrieved excerpt."
+        question.update(answer=correction["answer"], basis=basis, source_ids=ids, gap=gap)
+        lens["confidence"] = "Low"
+    for key, checked in review["assessments"].items():
+        lenses[key]["summary"] = checked["summary"]
+        lenses[key]["experiment"] = checked["experiment"]
+        if not any(q["source_ids"] for q in lenses[key]["questions"]):
+            lenses[key]["signal"], lenses[key]["confidence"] = "Unknown", "Low"
+    return lenses
 
 
 def _fallback_synthesis(lenses):
@@ -407,7 +485,9 @@ alternatives to the submitted idea in the supplied geography.
             if failed == 3:
                 raise EvaluationError("The lens assessments could not be completed. Please try again or check the OpenAI connection and quota.")
         lenses = {key: lenses[key] for key in LENSES}
-        progress(0.83, "Connecting the findings and designing your next tests")
+        progress(0.81, "Checking factual claims and proposed tests against the sources")
+        lenses = _audit_lenses(client, brief, lenses, sources)
+        progress(0.91, "Connecting the findings and designing your next steps")
         try:
             synthesis = _json_call(client, "design_synthesis", """
 Synthesize the three lenses into a clear next decision: Explore (gather evidence
@@ -423,6 +503,9 @@ has identified relevant alternatives. Make unresolved contradictions explicit.
 Propose 2-3 distinct concept directions that solve the underlying need and explain
 each tradeoff. State exactly 3 ordered
 next steps with learning goals, starting with the riskiest assumption. Include
+any applicable licensing, safety, consent or permission checks BEFORE a real
+pilot or user test, rather than after. Experiments remain proposals, not proof of
+safety or compliance. Include
 5-6 non-leading interview questions about recent actual experience, workarounds,
 costs and failed alternatives; avoid 'would you use/pay for this?' questions.
 No new factual claims or numbers absent from the assessments; frame options and
