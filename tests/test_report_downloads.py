@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 
 from streamlit.testing.v1 import AppTest
 
-from app_ui import download_link_html
+from report_downloads import download_link_html
 from design_thinking import build_pdf, to_markdown
 from tests.fixtures import report
 

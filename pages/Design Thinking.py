@@ -8,7 +8,8 @@ from urllib.parse import urlparse
 
 import streamlit as st
 
-from app_ui import hide_text_field_hints, render_download_link
+from app_ui import hide_text_field_hints
+from report_downloads import render_download_link
 
 from design_thinking import (
     FRAMEWORK_SOURCES,
