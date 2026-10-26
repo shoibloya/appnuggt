@@ -14,6 +14,7 @@ IDEATION_URL = "https://nuggt-ai.streamlit.app/Ideation"
 DUE_DILIGENCE_URL = "https://nuggt-ai.streamlit.app/Due_Diligence"
 AETHER_URL = "https://nuggt-ai.streamlit.app/Aether"
 BUTA_URL = "https://nuggt-ai.streamlit.app/BUTA"
+DESIGN_THINKING_URL = "https://nuggt-ai.streamlit.app/Design_Thinking"
 
 # Side panel navigation
 st.sidebar.title("Applications")
@@ -23,6 +24,7 @@ st.sidebar.markdown(
 - [Due Diligence]({DUE_DILIGENCE_URL})
 - [Aether Workshop]({AETHER_URL})
 - [BUTA]({BUTA_URL})
+- [Design Thinking]({DESIGN_THINKING_URL})
 """
 )
 
@@ -41,3 +43,7 @@ st.markdown(f"[Open Aether Workshop]({AETHER_URL})")
 st.subheader("BUTA")
 st.write("Framework to analyse Beachheads (Budget, Urgency, Top-3 Fit, Access).")
 st.markdown(f"[Open BUTA]({BUTA_URL})")
+
+st.subheader("Design Thinking")
+st.write("Explore a broad idea through desirability, feasibility and viability, then plan the experiments that matter.")
+st.markdown(f"[Open Design Thinking]({DESIGN_THINKING_URL})")
