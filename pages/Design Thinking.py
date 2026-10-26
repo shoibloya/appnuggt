@@ -431,7 +431,7 @@ else:
                 )
         with markdown_column:
             st.download_button(
-                "Download Markdown", files["markdown"], file_name="nuggt-design-thinking-report.md",
+                "Markdown", files["markdown"], file_name="nuggt-design-thinking-report.md",
                 mime="text/markdown", use_container_width=True, key="dt_download_md",
             )
         if not files["pdf"]:
